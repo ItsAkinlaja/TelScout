@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Services\JobSources;
+
+use Illuminate\Support\Collection;
+
+/**
+ * Orchestrates all job sources, merges results, and applies location filtering.
+ */
+class JobSourceManager
+{
+    /** @var JobSourceInterface[] */
+    private array $sources;
+
+    public function __construct()
+    {
+        $this->sources = [
+            new RemoteOkSource(),
+            new RemotiveSource(),
+            new ArbeitnowSource(),
+        ];
+
+        if (config('services.adzuna.app_id') && config('services.adzuna.app_key')) {
+            $this->sources[] = new AdzunaSource();
+        }
+
+        $this->sources[] = new TheMuseSource();
+    }
+
+    public function search(array $criteria): Collection
+    {
+        $all = collect();
+
+        foreach ($this->sources as $source) {
+            try {
+                $results = $source->search($criteria);
+                $all = $all->merge($results);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error("JobSource [{$source->getName()}] failed", [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $filtered = $all
+            ->filter(fn($j) => !empty($j['title']) && !empty($j['company']))
+            ->unique(fn($j) => $j['source_url'] ?? ($j['title'] . '|' . $j['company']))
+            ->values();
+
+        // Apply location filter if specific locations were requested
+        $locations  = $criteria['locations']   ?? [];
+        $remoteOnly = $criteria['remote_only'] ?? false;
+
+        if ($remoteOnly) {
+            // Only keep remote jobs
+            $filtered = $filtered->filter(fn($j) => $this->isRemote($j));
+        } elseif (!empty($locations) && !$this->hasWorldwideLocation($locations)) {
+            // Filter by requested locations
+            // We allow remote jobs ONLY if they don't have a specific location restriction that excludes us
+            $filtered = $filtered->filter(fn($j) =>
+                $this->matchesLocation($j['location'] ?? '', $locations) ||
+                ($this->isRemote($j) && !$this->isRestrictedToOtherCountry($j['location'] ?? '', $locations))
+            );
+        }
+
+        return $filtered->values();
+    }
+
+    public function getSourceNames(): array
+    {
+        return array_map(fn($s) => $s->getName(), $this->sources);
+    }
+
+    /**
+     * Check if a job is remote based on its is_remote flag or location string.
+     */
+    private function isRemote(array $job): bool
+    {
+        if (!empty($job['is_remote'])) return true;
+        $loc = strtolower($job['location'] ?? '');
+        return str_contains($loc, 'remote') || str_contains($loc, 'worldwide') || str_contains($loc, 'anywhere');
+    }
+
+    /**
+     * Check if the job location matches any of the requested locations.
+     * Case-insensitive, partial match (e.g. "Nigeria" matches "Lagos, Nigeria").
+     */
+    private function matchesLocation(string $jobLocation, array $requestedLocations): bool
+    {
+        $jl = strtolower(trim($jobLocation));
+        $aliases = [
+            'uk' => ['united kingdom', 'great britain', 'england', 'scotland', 'wales', 'ni'],
+            'usa' => ['united states', 'america', 'us'],
+            'us' => ['united states', 'america', 'usa'],
+        ];
+
+        foreach ($requestedLocations as $loc) {
+            $loc = strtolower(trim($loc));
+
+            // Skip wildcards
+            if (in_array($loc, ['worldwide', 'remote', 'anywhere', 'global', ''])) continue;
+
+            // Direct or partial match
+            if (str_contains($jl, $loc) || str_contains($loc, $jl)) {
+                return true;
+            }
+
+            // Alias match (e.g. "UK" matches "United Kingdom")
+            foreach ($aliases as $alias => $names) {
+                if ($loc === $alias || in_array($loc, $names)) {
+                    if (str_contains($jl, $alias) || collect($names)->contains(fn($n) => str_contains($jl, $n))) {
+                        return true;
+                    }
+                }
+            }
+
+            // Country-level match: "Nigeria" matches "Lagos, Nigeria" or "Abuja Nigeria"
+            $parts = preg_split('/[\s,]+/', $loc);
+            foreach ($parts as $part) {
+                if (strlen($part) > 3 && str_contains($jl, strtolower($part))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if a "Remote" job is explicitly restricted to a region that
+     * doesn't match our target locations (e.g., "Remote (UK only)").
+     */
+    private function isRestrictedToOtherCountry(string $jobLocation, array $requestedLocations): bool
+    {
+        $jl = strtolower(trim($jobLocation));
+
+        // If it doesn't mention remote, it's not a remote job with restrictions we care about here
+        if (!str_contains($jl, 'remote')) return false;
+
+        // If it mentions our requested locations, it's not restricted *away* from us
+        if ($this->matchesLocation($jobLocation, $requestedLocations)) return false;
+
+        // If it contains a bracketed country or specific region name that isn't ours
+        // Examples: "Remote (UK)", "Remote - US Only", "Remote (Europe)"
+        $regions = ['uk', 'usa', 'us', 'europe', 'canada', 'germany', 'india'];
+        foreach ($regions as $region) {
+            if (str_contains($jl, $region)) return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true if locations list contains a worldwide/any indicator —
+     * meaning the user wants jobs from everywhere, no location filtering needed.
+     */
+    private function hasWorldwideLocation(array $locations): bool
+    {
+        $wildcards = ['worldwide', 'remote', 'anywhere', 'global', 'all'];
+        foreach ($locations as $loc) {
+            if (in_array(strtolower(trim($loc)), $wildcards)) return true;
+        }
+        return false;
+    }
+}
