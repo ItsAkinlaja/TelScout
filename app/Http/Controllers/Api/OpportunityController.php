@@ -172,6 +172,9 @@ class OpportunityController extends Controller
 
         $result = $this->ai($request->user()->id)->generateEmail($jobData, $companyData, $profileData);
 
+        // Update opportunity with tailoring suggestions
+        $opportunity->update(['cv_tailoring_suggestions' => $result['suggestions'] ?? null]);
+
         // Create/update draft email
         $email = EmailMessage::updateOrCreate(
             ['opportunity_id' => $opportunity->id, 'status' => 'draft'],
@@ -182,14 +185,17 @@ class OpportunityController extends Controller
                 'subject'          => $result['subject'],
                 'body_text'        => $result['body'],
                 'body_html'        => nl2br(htmlspecialchars($result['body'])),
+                'attach_cv'        => true, // Default to true if user has a CV
+                'cv_path'          => $profile->cv_path,
                 'status'           => 'draft',
             ]
         );
 
         return response()->json([
-            'email'   => $email,
-            'subject' => $result['subject'],
-            'body'    => $result['body'],
+            'email'       => $email,
+            'subject'     => $result['subject'],
+            'body'        => $result['body'],
+            'suggestions' => $result['suggestions'] ?? null,
         ]);
     }
 }

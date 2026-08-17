@@ -11,14 +11,15 @@ class EmailMessage extends Model
     protected $fillable = [
         'user_id', 'opportunity_id', 'google_account_id',
         'recipient_email', 'recipient_name', 'subject',
-        'body_html', 'body_text', 'status',
-        'gmail_message_id', 'gmail_thread_id',
+        'body_html', 'body_text', 'attach_cv', 'cv_path',
+        'status', 'gmail_message_id', 'gmail_thread_id',
         'follow_up_count', 'follow_up_due_at',
         'sent_at', 'approved_at', 'failure_reason',
         'retry_count', 'meta',
     ];
 
     protected $casts = [
+        'attach_cv' => 'boolean',
         'follow_up_due_at' => 'datetime',
         'sent_at' => 'datetime',
         'approved_at' => 'datetime',

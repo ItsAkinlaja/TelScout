@@ -37,7 +37,7 @@ class SmtpProvider implements MailProviderInterface
         };
     }
 
-    public function send(EmailMessage $email): string
+    public function send(EmailMessage $email, ?string $attachmentPath = null): string
     {
         $mailer = $this->buildMailer();
 
@@ -46,6 +46,10 @@ class SmtpProvider implements MailProviderInterface
             ->to(new Address($email->recipient_email, $email->recipient_name ?? ''))
             ->subject($email->subject)
             ->text($email->body_text ?? strip_tags($email->body_html ?? ''));
+
+        if ($attachmentPath && file_exists($attachmentPath)) {
+            $message->attachFromPath($attachmentPath, 'Resume.pdf', 'application/pdf');
+        }
 
         $mailer->send($message);
 

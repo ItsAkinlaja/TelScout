@@ -9,7 +9,7 @@ interface MailProviderInterface
     /**
      * Send an email. Returns the provider's message ID on success.
      */
-    public function send(EmailMessage $email): string;
+    public function send(EmailMessage $email, ?string $attachmentPath = null): string;
 
     /**
      * Test the connection / credentials without sending.

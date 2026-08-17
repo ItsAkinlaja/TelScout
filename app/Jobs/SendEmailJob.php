@@ -48,8 +48,18 @@ class SendEmailJob implements ShouldQueue
         $email->update(['status' => 'sending']);
 
         try {
-            $provider  = MailService::for($account);
-            $messageId = $provider->send($email);
+            $provider       = MailService::for($account);
+            $attachmentPath = null;
+
+            if ($email->attach_cv && $email->cv_path) {
+                $attachmentPath = storage_path('app/' . $email->cv_path);
+                if (!file_exists($attachmentPath)) {
+                    $attachmentPath = null;
+                    Log::warning('SendEmailJob: Attachment file missing', ['path' => $email->cv_path]);
+                }
+            }
+
+            $messageId = $provider->send($email, $attachmentPath);
 
             $email->update([
                 'status'           => 'sent',

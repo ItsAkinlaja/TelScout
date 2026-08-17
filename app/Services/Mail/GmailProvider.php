@@ -14,11 +14,11 @@ class GmailProvider implements MailProviderInterface
 
     public function getName(): string { return 'Gmail'; }
 
-    public function send(EmailMessage $email): string
+    public function send(EmailMessage $email, ?string $attachmentPath = null): string
     {
         $this->ensureFreshToken();
 
-        $raw     = $this->buildRaw($email);
+        $raw     = $this->buildRaw($email, $attachmentPath);
         $encoded = rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
 
         $response = Http::withToken($this->account->getAccessToken())
@@ -50,21 +50,49 @@ class GmailProvider implements MailProviderInterface
         return $res->ok();
     }
 
-    private function buildRaw(EmailMessage $email): string
+    private function buildRaw(EmailMessage $email, ?string $attachmentPath): string
     {
         $to = $email->recipient_name
             ? "\"{$email->recipient_name}\" <{$email->recipient_email}>"
             : $email->recipient_email;
+        $subject = "=?UTF-8?B?" . base64_encode($email->subject) . "?=";
+        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
 
-        return implode("\r\n", [
-            "To: {$to}",
-            "Subject: =?UTF-8?B?" . base64_encode($email->subject) . "?=",
-            "MIME-Version: 1.0",
-            "Content-Type: text/plain; charset=UTF-8",
-            "Content-Transfer-Encoding: base64",
-            "",
-            base64_encode($email->body_text ?? strip_tags($email->body_html ?? '')),
-        ]);
+        if (!$attachmentPath || !file_exists($attachmentPath)) {
+            return implode("\r\n", [
+                "To: {$to}",
+                "Subject: {$subject}",
+                "MIME-Version: 1.0",
+                "Content-Type: text/plain; charset=UTF-8",
+                "Content-Transfer-Encoding: base64",
+                "",
+                base64_encode($body),
+            ]);
+        }
+
+        $boundary = uniqid('np', true);
+        $fileContent = chunk_split(base64_encode(file_get_contents($attachmentPath)));
+        $fileName = basename($attachmentPath);
+
+        $raw = "To: {$to}\r\n";
+        $raw .= "Subject: {$subject}\r\n";
+        $raw .= "MIME-Version: 1.0\r\n";
+        $raw .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n\r\n";
+
+        $raw .= "--{$boundary}\r\n";
+        $raw .= "Content-Type: text/plain; charset=UTF-8\r\n";
+        $raw .= "Content-Transfer-Encoding: base64\r\n\r\n";
+        $raw .= base64_encode($body) . "\r\n\r\n";
+
+        $raw .= "--{$boundary}\r\n";
+        $raw .= "Content-Type: application/pdf; name=\"{$fileName}\"\r\n";
+        $raw .= "Content-Description: {$fileName}\r\n";
+        $raw .= "Content-Disposition: attachment; filename=\"{$fileName}\"; size=" . filesize($attachmentPath) . ";\r\n";
+        $raw .= "Content-Transfer-Encoding: base64\r\n\r\n";
+        $raw .= $fileContent . "\r\n";
+        $raw .= "--{$boundary}--";
+
+        return $raw;
     }
 
     private function ensureFreshToken(): void

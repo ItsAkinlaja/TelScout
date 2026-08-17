@@ -28,7 +28,7 @@ class DiscoverJobsJob implements ShouldQueue
         private int $userId
     ) {}
 
-    public function handle(MatchScoringService $scorer): void
+    public function handle(MatchScoringService $scorer, \App\Services\ContactDiscoveryService $discovery): void
     {
         $run  = SearchRun::findOrFail($this->searchRunId);
         $run->update(['status' => 'running', 'started_at' => now()]);
@@ -112,10 +112,28 @@ class DiscoverJobsJob implements ShouldQueue
                     $minScore = $criteria['min_score'] ?? 0;
                     if ($scoreResult['score'] < $minScore) continue;
 
+                    // ── Discover Contact ────────────────────────────────────
+                    $foundEmail = $discovery->discover($job);
+                    $contactId  = null;
+
+                    if ($foundEmail) {
+                        $contact = $company->contacts()->firstOrCreate(
+                            ['email' => $foundEmail],
+                            ['name' => 'Hiring Team', 'contact_type' => 'hiring_manager']
+                        );
+                        $contactId = $contact->id;
+
+                        // Also update company email if not set
+                        if (!$company->contact_email) {
+                            $company->update(['contact_email' => $foundEmail]);
+                        }
+                    }
+
                     Opportunity::create([
                         'user_id'              => $this->userId,
                         'job_listing_id'       => $job->id,
                         'company_id'           => $company->id,
+                        'contact_id'           => $contactId,
                         'match_score'          => $scoreResult['score'],
                         'match_classification' => $scoreResult['classification'],
                         'matched_skills'       => $scoreResult['matched_skills'],

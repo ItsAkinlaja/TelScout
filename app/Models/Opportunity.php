@@ -12,9 +12,9 @@ class Opportunity extends Model
     protected $fillable = [
         'user_id', 'job_listing_id', 'company_id', 'contact_id',
         'match_score', 'match_classification', 'matched_skills',
-        'missing_skills', 'match_reasoning', 'score_breakdown',
-        'status', 'application_url', 'notes', 'discovered_at',
-        'applied_at', 'interview_dates',
+        'missing_skills', 'match_reasoning', 'cv_tailoring_suggestions',
+        'score_breakdown', 'status', 'application_url', 'notes',
+        'discovered_at', 'applied_at', 'interview_dates',
     ];
 
     protected $casts = [
