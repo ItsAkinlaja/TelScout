@@ -9,11 +9,14 @@ use App\Policies\OpportunityPolicy;
 use App\Services\JobSources\AdzunaSource;
 use App\Services\JobSources\ArbeitnowSource;
 use App\Services\JobSources\JobSourceManager;
+use App\Services\JobSources\JSearchSource;
+use App\Services\JobSources\ReedSource;
 use App\Services\JobSources\RemoteOkSource;
 use App\Services\JobSources\RemotiveSource;
 use App\Services\JobSources\TheMuseSource;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Socialite\Facades\Socialite;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -40,6 +43,14 @@ class AppServiceProvider extends ServiceProvider
                 $sources[] = new AdzunaSource();
             }
 
+            if (config('services.jsearch.api_key')) {
+                $sources[] = new JSearchSource();
+            }
+
+            if (config('services.reed.api_key')) {
+                $sources[] = new ReedSource();
+            }
+
             return new JobSourceManager($sources);
         });
     }
@@ -48,5 +59,15 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Opportunity::class, OpportunityPolicy::class);
         Gate::policy(EmailMessage::class, EmailPolicy::class);
+
+        // Register a 'google' Socialite driver that reads from services.google_login
+        // (separate from the Gmail OAuth driver used for mail account connections).
+        Socialite::extend('google', function () {
+            $config = config('services.google_login');
+            return Socialite::buildProvider(
+                \Laravel\Socialite\Two\GoogleProvider::class,
+                $config
+            );
+        });
     }
 }

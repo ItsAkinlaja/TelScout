@@ -47,7 +47,7 @@ class ArbeitnowSource implements JobSourceInterface
                     $params['remote'] = 'true';
                 }
 
-                $response = Http::timeout(20)
+                $response = Http::timeout(15)
                     ->withHeaders(['User-Agent' => 'TelScout/1.0 (+https://telscout.app)'])
                     ->get('https://arbeitnow.com/api/job-board-api', $params);
 

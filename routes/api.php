@@ -19,6 +19,14 @@ use App\Http\Controllers\Api\AnalyticsController;
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/register', [AuthController::class, 'register']);
 
+// Magic-link email login
+Route::post('/auth/magic-link', [\App\Http\Controllers\Api\SocialAuthController::class, 'magicLinkRequest']);
+Route::get('/auth/magic-link/verify', [\App\Http\Controllers\Api\SocialAuthController::class, 'magicLinkVerify']);
+
+// Google OAuth
+Route::get('/auth/google', [\App\Http\Controllers\Api\SocialAuthController::class, 'googleRedirect']);
+Route::get('/auth/google/callback', [\App\Http\Controllers\Api\SocialAuthController::class, 'googleCallback']);
+
 // Gmail OAuth callback (must be outside auth middleware)
 Route::get('/gmail/callback', [GmailController::class, 'callback']);
 

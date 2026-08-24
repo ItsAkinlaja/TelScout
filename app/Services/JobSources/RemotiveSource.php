@@ -53,7 +53,7 @@ class RemotiveSource implements JobSourceInterface
                 $cat = $this->mapCategory($keyword);
                 if ($cat) $params['category'] = $cat;
 
-                $response = Http::timeout(20)
+                $response = Http::timeout(15)
                     ->withHeaders(['User-Agent' => 'TelScout/1.0 (+https://telscout.app)'])
                     ->get('https://remotive.com/api/remote-jobs', $params);
 

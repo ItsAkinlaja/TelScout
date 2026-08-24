@@ -70,7 +70,7 @@ class AdzunaSource implements JobSourceInterface
                     $params['salary_min'] = (int) $minSalary;
                 }
 
-                $response = Http::timeout(25)
+                $response = Http::timeout(15)
                     ->withHeaders(['User-Agent' => 'TelScout/1.0 (+https://telscout.app)'])
                     ->get("{$this->baseUrl}/{$country}/search/1", $params);
 

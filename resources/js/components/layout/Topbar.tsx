@@ -5,9 +5,11 @@ import { useNavigate, useLocation } from 'react-router-dom'
 
 const TITLES: Record<string, string> = {
   '/dashboard':     'Dashboard',
+  '/discover':      'Discover Jobs',
   '/opportunities': 'Opportunities',
   '/companies':     'Companies',
   '/jobs':          'Jobs',
+  '/job-sources':   'Job Sources',
   '/applications':  'Applications',
   '/follow-ups':    'Follow-ups',
   '/analytics':     'Analytics',
@@ -27,7 +29,7 @@ export default function Topbar({ onMenuClick }: Props) {
 
   const title = Object.entries(TITLES).find(
     ([path]) => pathname === path || pathname.startsWith(path + '/')
-  )?.[1] ?? 'TelScout'
+  )?.[1] ?? ''
 
   const handleLogout = async () => {
     await logout()

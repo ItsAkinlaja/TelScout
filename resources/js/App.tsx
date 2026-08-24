@@ -2,7 +2,9 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
+import AuthCallbackPage from './pages/AuthCallbackPage'
 import DashboardPage from './pages/DashboardPage'
+import DiscoverPage from './pages/DiscoverPage'
 import OpportunitiesPage from './pages/OpportunitiesPage'
 import OpportunityDetailPage from './pages/OpportunityDetailPage'
 import CompaniesPage from './pages/CompaniesPage'
@@ -29,9 +31,11 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="discover" element={<DiscoverPage />} />
         <Route path="opportunities" element={<OpportunitiesPage />} />
         <Route path="opportunities/:id" element={<OpportunityDetailPage />} />
         <Route path="companies" element={<CompaniesPage />} />

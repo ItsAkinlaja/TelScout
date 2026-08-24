@@ -8,6 +8,7 @@ use App\Models\SearchRun;
 use App\Services\JobSources\JobSourceManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SearchController extends Controller
 {
@@ -23,7 +24,6 @@ class SearchController extends Controller
             'remote_only'=> 'sometimes|boolean',
             'min_score'  => 'sometimes|integer|min:0|max:100',
             'days_old'   => 'sometimes|integer|min:1|max:90',
-            'provider'   => 'sometimes|string',
         ]);
 
         $data['days_old'] = $data['days_old'] ?? 30;
@@ -36,24 +36,31 @@ class SearchController extends Controller
             'status'   => 'pending',
         ]);
 
-        // On shared hosting (no persistent queue worker), run synchronously
-        // but dispatch to queue first — if queue_connection=database and
-        // no worker is running, we fall back to running it inline after response.
-        // The cron will also pick it up if it hasn't run yet.
-        if (config('queue.default') === 'sync') {
-            // sync driver: runs immediately inline (local dev without worker)
-            DiscoverJobsJob::dispatch($run->id, $request->user()->id);
+        $userId = $request->user()->id;
+
+        // Detect whether a real queue worker is active.
+        // If queue is 'database', check if there's a worker that has consumed
+        // a job recently — otherwise run inline so the user isn't left waiting.
+        $runInline = $this->shouldRunInline();
+
+        if ($runInline) {
+            // Run directly in this request with a hard time limit.
+            // The job itself caps at 90 s, which is within typical PHP max_execution_time.
+            DiscoverJobsJob::dispatchSync($run->id, $userId);
         } else {
-            // async driver: dispatch to queue, also schedule a fallback
-            // The cron (*/5 * * * *) will process this within 5 minutes max.
-            // We dispatch with a slight delay so the response returns first.
-            DiscoverJobsJob::dispatch($run->id, $request->user()->id);
+            DiscoverJobsJob::dispatch($run->id, $userId);
         }
 
+        // Refresh the run so the response reflects any inline completion
+        $run->refresh();
+
         return response()->json([
-            'message'    => 'Search queued. Results will appear automatically — this usually takes 30–60 seconds.',
+            'message'    => $runInline
+                ? 'Search complete — scroll down to see results.'
+                : 'Search queued. Results will appear automatically in 30–60 seconds.',
             'search_run' => $run,
             'sources'    => $this->sourceManager->getSourceNames(),
+            'inline'     => $runInline,
         ], 202);
     }
 
@@ -72,5 +79,46 @@ class SearchController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
         return response()->json($run);
+    }
+
+    /**
+     * Returns true when the job should run synchronously in the HTTP request.
+     *
+     * We run inline when:
+     *  - The queue driver is 'sync', OR
+     *  - The queue driver is 'database' and no worker has consumed a job in the
+     *    last 10 minutes (queue_jobs table has pending jobs older than 5 minutes).
+     */
+    private function shouldRunInline(): bool
+    {
+        $driver = config('queue.default');
+
+        if ($driver === 'sync') return true;
+
+        if ($driver === 'database') {
+            // Check if there's a worker by looking at recent failed_jobs activity
+            // or simply whether we have stale pending jobs (no worker = jobs pile up).
+            try {
+                $stalePending = DB::table('jobs')
+                    ->where('available_at', '<', now()->subMinutes(5)->timestamp)
+                    ->exists();
+
+                if ($stalePending) return true;
+
+                // Also check: if queue is empty entirely, we can't tell — run inline
+                // to guarantee the user gets results without needing a worker
+                $anyPending = DB::table('jobs')->exists();
+                if (!$anyPending) {
+                    // No queued jobs at all — could mean worker cleared them (good)
+                    // or no worker (we just haven't queued anything yet).
+                    // Default to inline to guarantee UX.
+                    return true;
+                }
+            } catch (\Throwable) {
+                return true; // If jobs table doesn't exist, run inline
+            }
+        }
+
+        return false;
     }
 }

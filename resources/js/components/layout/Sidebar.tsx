@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Zap, Building2, Briefcase,
-  FileText, Calendar, BarChart3, User, Settings, X,
+  FileText, Calendar, BarChart3, User, Settings, X, Search,
 } from 'lucide-react'
 
 const nav = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/discover',     icon: Search,          label: 'Discover Jobs' },
   { to: '/opportunities',icon: Zap,             label: 'Opportunities' },
   { to: '/companies',    icon: Building2,       label: 'Companies' },
   { to: '/jobs',         icon: Briefcase,       label: 'Jobs' },
