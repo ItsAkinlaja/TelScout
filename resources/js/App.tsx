@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage'
 import MailSettingsPage from './pages/settings/MailSettingsPage'
 import AutomationSettingsPage from './pages/settings/AutomationSettingsPage'
 import PreferencesPage from './pages/settings/PreferencesPage'
+import JobSourcesPage from './pages/JobSourcesPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="companies/:id" element={<CompanyDetailPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:id" element={<JobDetailPage />} />
+        <Route path="job-sources" element={<JobSourcesPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="follow-ups" element={<FollowUpsPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />

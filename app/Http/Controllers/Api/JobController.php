@@ -39,6 +39,34 @@ class JobController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        if ($request->filled('country')) {
+            $query->where('country', $request->input('country'));
+        }
+
+        if ($request->filled('workplace_type')) {
+            $query->where('workplace_type', $request->input('workplace_type'));
+        }
+
+        if ($request->filled('experience_level')) {
+            $query->where('experience_level', $request->input('experience_level'));
+        }
+
+        if ($request->filled('employment_type')) {
+            $query->where('employment_type', $request->input('employment_type'));
+        }
+
+        if ($request->filled('source')) {
+            $query->where('source', $request->input('source'));
+        }
+
+        if ($request->filled('salary_min')) {
+            $query->where('salary_min', '>=', $request->input('salary_min'));
+        }
+
+        if ($request->filled('date_posted')) {
+            $query->where('posted_at', '>=', now()->subDays($request->input('date_posted')));
+        }
+
         $jobs = $query->orderByDesc('posted_at')
             ->paginate($request->input('per_page', 20));
 
@@ -125,6 +153,17 @@ class JobController extends Controller
         }
 
         return response()->json($job->load(['company', 'skills']), 201);
+    }
+
+    public function filters(): JsonResponse
+    {
+        return response()->json([
+            'workplace_types'   => ['remote', 'hybrid', 'onsite', 'unknown'],
+            'experience_levels' => ['internship', 'entry', 'mid', 'senior', 'lead', 'executive', 'unknown'],
+            'employment_types'  => JobListing::whereNotNull('employment_type')->distinct()->pluck('employment_type'),
+            'sources'           => JobListing::whereNotNull('source')->distinct()->pluck('source'),
+            'countries'         => JobListing::whereNotNull('country')->distinct()->orderBy('country')->pluck('country'),
+        ]);
     }
 
     public function destroy(JobListing $job): JsonResponse

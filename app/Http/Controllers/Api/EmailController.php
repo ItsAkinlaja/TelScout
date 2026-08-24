@@ -113,10 +113,17 @@ class EmailController extends Controller
             return response()->json(['message' => 'No recipient email address.'], 422);
         }
 
-        // Check daily limit
+        // Domain blacklist — never cold-email these regardless of user config
+        if ($this->isBlacklistedDomain($email->recipient_email)) {
+            return response()->json(['message' => 'Sending to this domain is not allowed.'], 422);
+        }
+
         $settings    = AutomationSettings::where('user_id', $request->user()->id)->first();
-        $dailyLimit  = $settings?->daily_send_limit ?? 10;
-        $sentToday   = EmailMessage::where('user_id', $request->user()->id)
+        $userId      = $request->user()->id;
+
+        // Daily limit
+        $dailyLimit = $settings?->daily_send_limit ?? 10;
+        $sentToday  = EmailMessage::where('user_id', $userId)
             ->where('status', 'sent')
             ->whereDate('sent_at', today())
             ->count();
@@ -125,8 +132,19 @@ class EmailController extends Controller
             return response()->json(['message' => "Daily send limit of {$dailyLimit} reached."], 429);
         }
 
+        // Hourly limit — prevents bursting the full daily quota in minutes
+        $hourlyLimit = $settings?->hourly_send_limit ?? 5;
+        $sentThisHour = EmailMessage::where('user_id', $userId)
+            ->where('status', 'sent')
+            ->where('sent_at', '>=', now()->subHour())
+            ->count();
+
+        if ($sentThisHour >= $hourlyLimit) {
+            return response()->json(['message' => "Hourly send limit of {$hourlyLimit} reached. Try again shortly."], 429);
+        }
+
         // Check duplicate recipient
-        $alreadySent = EmailMessage::where('user_id', $request->user()->id)
+        $alreadySent = EmailMessage::where('user_id', $userId)
             ->where('recipient_email', $email->recipient_email)
             ->where('status', 'sent')
             ->exists();
@@ -147,6 +165,26 @@ class EmailController extends Controller
         ]);
 
         return response()->json(['message' => 'Email queued for sending.', 'email' => $email]);
+    }
+
+    /**
+     * Domains that should never receive cold outreach from this system.
+     * Includes major ESPs, role-based abuse addresses, and legal traps.
+     */
+    private function isBlacklistedDomain(string $email): bool
+    {
+        $domain = strtolower(substr(strrchr($email, '@'), 1));
+
+        $blacklisted = [
+            // Generic inbox providers — people don't want cold-emails here
+            'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com',
+            'icloud.com', 'me.com', 'aol.com', 'protonmail.com',
+            // Role/abuse addresses that will hurt sender reputation
+            'example.com', 'example.org', 'test.com', 'mailinator.com',
+            'guerrillamail.com', 'tempmail.com', 'throwam.com',
+        ];
+
+        return in_array($domain, $blacklisted, strict: true);
     }
 
     public function destroy(Request $request, EmailMessage $email): JsonResponse

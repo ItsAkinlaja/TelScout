@@ -6,25 +6,21 @@ use Illuminate\Support\Collection;
 
 /**
  * Orchestrates all job sources, merges results, and applies location filtering.
+ *
+ * Sources are injected via the service container (see AppServiceProvider).
+ * This makes the class testable — swap in mock sources without touching production code.
  */
 class JobSourceManager
 {
     /** @var JobSourceInterface[] */
     private array $sources;
 
-    public function __construct()
+    /**
+     * @param JobSourceInterface[] $sources Injected by the service container.
+     */
+    public function __construct(array $sources)
     {
-        $this->sources = [
-            new RemoteOkSource(),
-            new RemotiveSource(),
-            new ArbeitnowSource(),
-        ];
-
-        if (config('services.adzuna.app_id') && config('services.adzuna.app_key')) {
-            $this->sources[] = new AdzunaSource();
-        }
-
-        $this->sources[] = new TheMuseSource();
+        $this->sources = $sources;
     }
 
     public function search(array $criteria): Collection

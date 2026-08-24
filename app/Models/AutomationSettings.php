@@ -19,6 +19,8 @@ class AutomationSettings extends Model
         'google_client_id_encrypted', 'google_client_secret_encrypted', 'google_redirect_uri',
         // AI
         'ai_provider', 'ai_api_key_encrypted', 'ai_model', 'ai_temperature', 'ai_max_tokens',
+        // Contact enrichment (stored encrypted, set via setters)
+        'hunter_api_key_encrypted', 'apollo_api_key_encrypted',
     ];
 
     protected $casts = [
@@ -37,6 +39,8 @@ class AutomationSettings extends Model
         'google_client_id_encrypted',
         'google_client_secret_encrypted',
         'ai_api_key_encrypted',
+        'hunter_api_key_encrypted',
+        'apollo_api_key_encrypted',
     ];
 
     public function user(): BelongsTo
@@ -55,7 +59,7 @@ class AutomationSettings extends Model
     {
         return $this->google_client_id_encrypted
             ? Crypt::decryptString($this->google_client_id_encrypted)
-            : config('services.google.client_id');
+            : null;
     }
 
     public function setGoogleClientSecret(string $value): void
@@ -67,7 +71,7 @@ class AutomationSettings extends Model
     {
         return $this->google_client_secret_encrypted
             ? Crypt::decryptString($this->google_client_secret_encrypted)
-            : config('services.google.client_secret');
+            : null;
     }
 
     public function getEffectiveRedirectUri(): string
@@ -87,16 +91,54 @@ class AutomationSettings extends Model
     {
         return $this->ai_api_key_encrypted
             ? Crypt::decryptString($this->ai_api_key_encrypted)
-            : config('services.ai.api_key');
+            : null;
     }
+
+    // ── Contact enrichment ────────────────────────────────────────────────────
+
+    public function setHunterApiKey(string $value): void
+    {
+        $this->hunter_api_key_encrypted = Crypt::encryptString($value);
+    }
+
+    public function getHunterApiKey(): ?string
+    {
+        return $this->hunter_api_key_encrypted
+            ? Crypt::decryptString($this->hunter_api_key_encrypted)
+            : null;
+    }
+
+    public function setApolloApiKey(string $value): void
+    {
+        $this->apollo_api_key_encrypted = Crypt::encryptString($value);
+    }
+
+    public function getApolloApiKey(): ?string
+    {
+        return $this->apollo_api_key_encrypted
+            ? Crypt::decryptString($this->apollo_api_key_encrypted)
+            : null;
+    }
+
+    // ── Presence checks ───────────────────────────────────────────────────────
 
     public function hasGoogleOAuth(): bool
     {
-        return !empty($this->google_client_id_encrypted) || !empty(config('services.google.client_id'));
+        return !empty($this->google_client_id_encrypted);
     }
 
     public function hasAiKey(): bool
     {
-        return !empty($this->ai_api_key_encrypted) || !empty(config('services.ai.api_key'));
+        return !empty($this->ai_api_key_encrypted);
+    }
+
+    public function hasHunterKey(): bool
+    {
+        return !empty($this->hunter_api_key_encrypted);
+    }
+
+    public function hasApolloKey(): bool
+    {
+        return !empty($this->apollo_api_key_encrypted);
     }
 }

@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 
 class SearchController extends Controller
 {
+    public function __construct(private JobSourceManager $sourceManager) {}
+
     public function run(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -51,7 +53,7 @@ class SearchController extends Controller
         return response()->json([
             'message'    => 'Search queued. Results will appear automatically — this usually takes 30–60 seconds.',
             'search_run' => $run,
-            'sources'    => (new JobSourceManager())->getSourceNames(),
+            'sources'    => $this->sourceManager->getSourceNames(),
         ], 202);
     }
 

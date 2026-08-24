@@ -27,6 +27,11 @@ class Company extends Model
         return $this->hasMany(JobListing::class);
     }
 
+    public function jobSources(): HasMany
+    {
+        return $this->hasMany(JobSource::class);
+    }
+
     public function contacts(): HasMany
     {
         return $this->hasMany(Contact::class);

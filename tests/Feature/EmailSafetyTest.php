@@ -116,6 +116,56 @@ class EmailSafetyTest extends TestCase
         $this->assertEquals('approved', $email->fresh()->status);
     }
 
+    public function test_hourly_limit_blocks_sending(): void
+    {
+        // Patch: set hourly_send_limit to 2
+        AutomationSettings::where('user_id', $this->user->id)
+            ->update(['hourly_send_limit' => 2]);
+
+        // Already sent 2 emails within the last hour
+        for ($i = 0; $i < 2; $i++) {
+            EmailMessage::create([
+                'user_id'         => $this->user->id,
+                'recipient_email' => "hourly{$i}@company.com",
+                'subject'         => 'Test',
+                'body_text'       => 'Body',
+                'status'          => 'sent',
+                'sent_at'         => now()->subMinutes(10),
+            ]);
+        }
+
+        $email = EmailMessage::create([
+            'user_id'         => $this->user->id,
+            'recipient_email' => 'nexthour@company.com',
+            'subject'         => 'Test',
+            'body_text'       => 'Body',
+            'status'          => 'approved',
+            'approved_at'     => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/emails/{$email->id}/send")
+            ->assertStatus(429)
+            ->assertJsonFragment(['message' => 'Hourly send limit of 2 reached. Try again shortly.']);
+    }
+
+    public function test_blacklisted_domain_is_rejected(): void
+    {
+        $email = EmailMessage::create([
+            'user_id'         => $this->user->id,
+            'recipient_email' => 'someone@gmail.com',
+            'subject'         => 'Test',
+            'body_text'       => 'Body',
+            'status'          => 'approved',
+            'approved_at'     => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/emails/{$email->id}/send")
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Sending to this domain is not allowed.']);
+    }
+
     public function test_follow_up_is_cancelled_when_opportunity_rejected(): void
     {
         $company = Company::create(['name' => 'Test Co']);

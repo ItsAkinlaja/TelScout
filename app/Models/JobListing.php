@@ -13,15 +13,19 @@ class JobListing extends Model
         'employment_type', 'salary_min', 'salary_max', 'salary_currency',
         'application_url', 'source_url', 'external_id', 'source',
         'status', 'posted_at', 'expires_at', 'meta',
+        'country', 'city', 'workplace_type', 'experience_level',
+        'content_hash', 'first_seen_at', 'last_seen_at',
     ];
 
     protected $casts = [
-        'is_remote' => 'boolean',
-        'salary_min' => 'decimal:2',
-        'salary_max' => 'decimal:2',
-        'posted_at' => 'datetime',
-        'expires_at' => 'datetime',
-        'meta' => 'array',
+        'is_remote'     => 'boolean',
+        'salary_min'    => 'decimal:2',
+        'salary_max'    => 'decimal:2',
+        'posted_at'     => 'datetime',
+        'expires_at'    => 'datetime',
+        'first_seen_at' => 'datetime',
+        'last_seen_at'  => 'datetime',
+        'meta'          => 'array',
     ];
 
     public function company(): BelongsTo
@@ -42,5 +46,16 @@ class JobListing extends Model
     public function getSkillNamesAttribute(): array
     {
         return $this->skills->pluck('skill')->map(fn($s) => strtolower($s))->toArray();
+    }
+
+    /**
+     * Generate a SHA-256 content hash for deduplication across sources.
+     */
+    public static function generateContentHash(string $company, string $title, string $location): string
+    {
+        return hash(
+            'sha256',
+            strtolower(trim($company)) . '|' . strtolower(trim($title)) . '|' . strtolower(trim($location))
+        );
     }
 }

@@ -3,10 +3,10 @@
 namespace App\Jobs;
 
 use App\Models\Company;
-use App\Models\JobListing;
 use App\Models\Opportunity;
 use App\Models\SearchRun;
 use App\Models\User;
+use App\Services\JobIngestionService;
 use App\Services\JobSources\JobSourceManager;
 use App\Services\MatchScoringService;
 use Illuminate\Bus\Queueable;
@@ -28,7 +28,7 @@ class DiscoverJobsJob implements ShouldQueue
         private int $userId
     ) {}
 
-    public function handle(MatchScoringService $scorer, \App\Services\ContactDiscoveryService $discovery): void
+    public function handle(MatchScoringService $scorer, \App\Services\ContactDiscoveryService $discovery, JobIngestionService $ingestion, JobSourceManager $manager): void
     {
         $run  = SearchRun::findOrFail($this->searchRunId);
         $run->update(['status' => 'running', 'started_at' => now()]);
@@ -41,9 +41,8 @@ class DiscoverJobsJob implements ShouldQueue
             // Ensure days_old is set (default 30 days)
             $criteria['days_old'] = $criteria['days_old'] ?? 30;
 
-            // Run all sources via the manager
-            $manager  = new JobSourceManager();
-            $jobs     = $manager->search($criteria);
+            // Run all sources via the injected manager (configured in AppServiceProvider)
+            $jobs = $manager->search($criteria);
 
             Log::info("DiscoverJobsJob: fetched {$jobs->count()} raw jobs from all sources", [
                 'sources'  => $manager->getSourceNames(),
@@ -55,53 +54,19 @@ class DiscoverJobsJob implements ShouldQueue
             $newOpps      = 0;
 
             foreach ($jobs as $jobData) {
-                // ── Resolve/deduplicate company ────────────────────────────
-                $company = Company::findOrCreateByDomain([
-                    'name'    => $jobData['company'] ?? 'Unknown',
-                    'website' => $jobData['company_url'] ?? null,
-                ]);
-                if ($company->wasRecentlyCreated) $newCompanies++;
+                // ── Ingest (resolve company, deduplicate, create/update) ───
+                $job = $ingestion->ingest($jobData);
+                if (!$job) continue;
 
-                // Skip excluded companies
-                if ($company->is_excluded) continue;
-
-                // ── Deduplicate job by source_url or external_id ───────────
-                $existing = null;
-                if (!empty($jobData['source_url'])) {
-                    $existing = JobListing::where('source_url', $jobData['source_url'])->first();
+                // Track newly created listings
+                if ($job->wasRecentlyCreated) {
+                    $newJobs++;
+                } else {
+                    // Job already existed — still check opportunity scoring below
                 }
-                if (!$existing && !empty($jobData['external_id'])) {
-                    $existing = JobListing::where('external_id', $jobData['external_id'])
-                        ->where('source', $jobData['source'])
-                        ->first();
-                }
-                if ($existing) continue;
 
-                // ── Create job listing ─────────────────────────────────────
-                $job = JobListing::create([
-                    'company_id'      => $company->id,
-                    'title'           => $jobData['title'],
-                    'description'     => $jobData['description'] ?? null,
-                    'location'        => $jobData['location'] ?? null,
-                    'is_remote'       => $jobData['is_remote'] ?? false,
-                    'salary_min'      => $jobData['salary_min'] ?? null,
-                    'salary_max'      => $jobData['salary_max'] ?? null,
-                    'salary_currency' => $jobData['salary_currency'] ?? 'USD',
-                    'application_url' => $jobData['application_url'] ?? null,
-                    'source_url'      => $jobData['source_url'] ?? null,
-                    'external_id'     => $jobData['external_id'] ?? null,
-                    'source'          => $jobData['source'] ?? 'unknown',
-                    'status'          => 'active',
-                    'posted_at'       => $jobData['posted_at'] ?? now(),
-                ]);
-                $newJobs++;
-
-                // Attach skills/tags
-                foreach (array_unique($jobData['tags'] ?? []) as $tag) {
-                    if (!empty($tag)) {
-                        $job->skills()->firstOrCreate(['skill' => strtolower(trim($tag))]);
-                    }
-                }
+                // Resolve the company for opportunity creation
+                $company = $job->company ?? $job->load('company')->company;
 
                 // ── Auto-score opportunity ─────────────────────────────────
                 if ($profile) {

@@ -37,8 +37,9 @@ class AIService
         $maxTokens    = (int)    ($settings?->ai_max_tokens  ?? config('services.ai.max_tokens', 1000));
 
         return match ($providerName) {
-            'openai' => new OpenAIProvider($apiKey, $model, $temperature, $maxTokens),
-            default  => throw new InvalidArgumentException("Unknown AI provider: {$providerName}"),
+            'openai'    => new OpenAIProvider($apiKey, $model, $temperature, $maxTokens),
+            'anthropic' => new AnthropicProvider($apiKey, $model, $temperature, $maxTokens),
+            default     => throw new InvalidArgumentException("Unknown AI provider: {$providerName}"),
         };
     }
 }

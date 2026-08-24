@@ -44,8 +44,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/companies/{company}/exclude', [CompanyController::class, 'exclude']);
     Route::post('/companies/{company}/include', [CompanyController::class, 'include']);
 
-    // Jobs
-    Route::apiResource('jobs', JobController::class)->only(['index', 'show', 'store', 'destroy']);
+    // Jobs — filters MUST come before the resource routes so "filters" isn't
+    // treated as a {job} wildcard parameter by Laravel's router.
+    Route::get('/jobs/filters', [JobController::class, 'filters']);
+    Route::get('/jobs', [JobController::class, 'index']);
+    Route::get('/jobs/{job}', [JobController::class, 'show']);
+    Route::post('/jobs', [JobController::class, 'store']);
+    Route::delete('/jobs/{job}', [JobController::class, 'destroy']);
 
     // Opportunities
     Route::get('/opportunities', [OpportunityController::class, 'index']);
@@ -85,6 +90,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Analytics
     Route::get('/analytics', [AnalyticsController::class, 'index']);
+
+    // Job Sources (registered ATS feeds)
+    Route::get('/job-sources', [\App\Http\Controllers\Api\JobSourceController::class, 'index']);
+    Route::post('/job-sources', [\App\Http\Controllers\Api\JobSourceController::class, 'store']);
+    Route::delete('/job-sources/{jobSource}', [\App\Http\Controllers\Api\JobSourceController::class, 'destroy']);
+    Route::post('/job-sources/{jobSource}/trigger', [\App\Http\Controllers\Api\JobSourceController::class, 'trigger']);
 
     // Settings
     Route::get('/settings', [SettingsController::class, 'show']);

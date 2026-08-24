@@ -7,6 +7,29 @@ import MatchScore from '../components/ui/MatchScore'
 import { formatCurrency, formatDate } from '../lib/utils'
 import { TsPageStyles } from '../components/ui/TsShared'
 
+function SourceBadge({ source }: { source: string | null }) {
+  const badges: Record<string, { label: string; color: string }> = {
+    greenhouse: { label: 'Greenhouse', color: '#24a148' },
+    lever:      { label: 'Lever',      color: '#0066cc' },
+    ashby:      { label: 'Ashby',      color: '#7c3aed' },
+    remoteok:   { label: 'RemoteOK',   color: '#28a745' },
+    remotive:   { label: 'Remotive',   color: '#ef4444' },
+    arbeitnow:  { label: 'Arbeitnow',  color: '#f59e0b' },
+    adzuna:     { label: 'Adzuna',     color: '#e55a1d' },
+    the_muse:   { label: 'The Muse',   color: '#e91e8c' },
+    manual:     { label: 'Manual',     color: 'var(--text3)' },
+  }
+  const b = badges[source ?? 'manual'] ?? { label: source ?? 'Manual', color: 'var(--text3)' }
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+      background: b.color + '18', color: b.color, letterSpacing: '0.02em', textTransform: 'uppercase',
+    }}>
+      {b.label}
+    </span>
+  )
+}
+
 export default function JobDetailPage() {
   const { id } = useParams()
   const { data: job, isLoading } = useQuery({
@@ -19,6 +42,12 @@ export default function JobDetailPage() {
 
   const opp = job.opportunities?.[0]
 
+  const hasSecondaryMeta =
+    (job.workplace_type && job.workplace_type !== 'unknown') ||
+    (job.experience_level && job.experience_level !== 'unknown') ||
+    job.employment_type ||
+    (job.country && job.country !== job.location)
+
   return (
     <>
       <div className="ts-page" style={{ maxWidth: 760 }}>
@@ -30,7 +59,11 @@ export default function JobDetailPage() {
                 <Link to={`/companies/${job.company?.id}`} style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--accent)', textDecoration: 'none' }}>
                   {job.company?.name}
                 </Link>
-                {job.location && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--text3)' }}><MapPin size={13} strokeWidth={1.75} />{job.location}</span>}
+                {job.location && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--text3)' }}>
+                    <MapPin size={13} strokeWidth={1.75} />{job.location}
+                  </span>
+                )}
                 {job.is_remote && <span className="ts-pill ts-pill-green">Remote</span>}
                 {(job.salary_min || job.salary_max) && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 13, color: 'var(--text3)' }}>
@@ -39,8 +72,32 @@ export default function JobDetailPage() {
                   </span>
                 )}
               </div>
-              <p style={{ fontSize: 12, color: 'var(--text4)', marginTop: 6 }}>
-                {job.source ?? 'manual'}{job.posted_at && <> · Posted {formatDate(job.posted_at)}</>}
+
+              {/* Secondary meta row */}
+              {hasSecondaryMeta && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  {job.workplace_type && job.workplace_type !== 'unknown' && (
+                    <span className={`ts-pill ${job.workplace_type === 'remote' ? 'ts-pill-green' : ''}`} style={{ fontSize: 11 }}>
+                      {job.workplace_type}
+                    </span>
+                  )}
+                  {job.experience_level && job.experience_level !== 'unknown' && (
+                    <span className="ts-pill ts-pill-accent" style={{ fontSize: 11 }}>
+                      {job.experience_level}
+                    </span>
+                  )}
+                  {job.employment_type && (
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>{job.employment_type}</span>
+                  )}
+                  {job.country && job.country !== job.location && (
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>{job.country}</span>
+                  )}
+                </div>
+              )}
+
+              <p style={{ fontSize: 12, color: 'var(--text4)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <SourceBadge source={job.source} />
+                {job.posted_at && <span>Posted {formatDate(job.posted_at)}</span>}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -62,6 +119,46 @@ export default function JobDetailPage() {
                 <span key={s.skill} className={`ts-pill ${s.is_required ? 'ts-pill-accent' : ''}`}>{s.skill}</span>
               ))}
             </div>
+
+            {/* Matched / Missing skills from opportunity */}
+            {opp && ((opp.matched_skills?.length > 0) || (opp.missing_skills?.length > 0)) && (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border2)' }}>
+                {opp.matched_skills?.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <p style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text3)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Matched skills
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {opp.matched_skills.map((skill: string) => (
+                        <span key={skill} style={{
+                          fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 4,
+                          background: '#16a34a18', color: '#16a34a',
+                        }}>
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {opp.missing_skills?.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text3)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Missing skills
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {opp.missing_skills.map((skill: string) => (
+                        <span key={skill} style={{
+                          fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 4,
+                          background: 'var(--border2)', color: 'var(--text3)',
+                        }}>
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

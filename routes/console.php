@@ -38,3 +38,9 @@ Schedule::command('outreach:process-followups')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+// ── Fetch registered company ATS sources every 6 hours
+Schedule::command('jobs:fetch-sources')
+    ->everySixHours()
+    ->withoutOverlapping()
+    ->runInBackground();
