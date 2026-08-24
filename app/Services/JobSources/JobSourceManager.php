@@ -67,6 +67,12 @@ class JobSourceManager
         return array_map(fn($s) => $s->getName(), $this->sources);
     }
 
+    /** @return JobSourceInterface[] */
+    public function getSources(): array
+    {
+        return $this->sources;
+    }
+
     /**
      * Check if a job is remote based on its is_remote flag or location string.
      */

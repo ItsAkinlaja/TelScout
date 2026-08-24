@@ -2,11 +2,11 @@
 
 namespace App\Jobs;
 
-use App\Models\Company;
 use App\Models\Opportunity;
 use App\Models\SearchRun;
 use App\Models\User;
 use App\Services\JobIngestionService;
+use App\Services\JobSources\JobSourceInterface;
 use App\Services\JobSources\JobSourceManager;
 use App\Services\MatchScoringService;
 use Illuminate\Bus\Queueable;
@@ -20,12 +20,8 @@ class DiscoverJobsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Queue timeout: 2 minutes — gives all sources time to respond.
-     * The job itself enforces a 90-second soft deadline internally.
-     */
-    public int $tries   = 1;    // No retries — stale runs confuse the UI
-    public int $timeout = 120;
+    public int $tries   = 1;
+    public int $timeout = 300; // 5 min max on queue; sync mode ignores this
 
     public function __construct(
         private int $searchRunId,
@@ -33,143 +29,163 @@ class DiscoverJobsJob implements ShouldQueue
     ) {}
 
     public function handle(
-        MatchScoringService $scorer,
+        MatchScoringService  $scorer,
         \App\Services\ContactDiscoveryService $discovery,
-        JobIngestionService $ingestion,
-        JobSourceManager $manager
+        JobIngestionService  $ingestion,
+        JobSourceManager     $manager
     ): void {
+        // Extend PHP time limit for XAMPP/sync mode (ignored when running as a queue worker)
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(300);
+        }
+
         $run = SearchRun::findOrFail($this->searchRunId);
         $run->update(['status' => 'running', 'started_at' => now()]);
-
-        // Hard deadline: abort after 90 seconds so the run is never stuck as "running"
-        $deadline = time() + 90;
 
         try {
             $user     = User::findOrFail($this->userId);
             $profile  = $user->candidateProfile()->with(['skills', 'experiences'])->first();
-            $criteria = $run->criteria;
+            $criteria = $run->criteria ?? [];
             $criteria['days_old'] = $criteria['days_old'] ?? 30;
 
-            // ── Fetch jobs from all sources ────────────────────────────────
-            $jobs = $manager->search($criteria);
+            $totalNew  = 0;
+            $totalFetched = 0;
+            $sourcesDone  = 0;
+            $sourceNames  = $manager->getSourceNames();
+            $sourceCount  = count($sourceNames);
 
-            Log::info("DiscoverJobsJob: fetched {$jobs->count()} raw jobs", [
-                'sources' => $manager->getSourceNames(),
-                'user_id' => $this->userId,
-            ]);
+            // ── Process each source individually so we can track progress ──
+            foreach ($manager->getSources() as $source) {
+                $sourceName = $source->getName();
 
-            $newJobs = 0;
-            $newOpps = 0;
-            $processed = 0;
+                // Update run with current source being fetched
+                $run->update([
+                    'error_message' => null, // clear previous partial messages
+                    'meta'          => array_merge($run->meta ?? [], [
+                        'current_source' => $sourceName,
+                        'sources_done'   => $sourcesDone,
+                        'sources_total'  => $sourceCount,
+                    ]),
+                ]);
 
-            foreach ($jobs as $jobData) {
-                // Deadline check — stop processing but complete the run gracefully
-                if (time() > $deadline) {
-                    Log::info('DiscoverJobsJob: deadline reached, stopping early', [
-                        'processed' => $processed,
-                        'remaining' => $jobs->count() - $processed,
-                    ]);
-                    break;
-                }
+                try {
+                    $sourceJobs = $source->search($criteria);
+                    $totalFetched += $sourceJobs->count();
 
-                $processed++;
+                    foreach ($sourceJobs as $jobData) {
+                        $job = $ingestion->ingest($jobData);
+                        if (!$job) continue;
 
-                // ── Ingest (resolve company, deduplicate, create/update) ──
-                $job = $ingestion->ingest($jobData);
-                if (!$job) continue;
+                        if ($job->wasRecentlyCreated) {
+                            $totalNew++;
+                        }
 
-                if ($job->wasRecentlyCreated) {
-                    $newJobs++;
-                }
+                        if ($profile) {
+                            $job->loadMissing(['skills', 'company']);
+                            $scoreResult = $scorer->score($profile, $job);
 
-                // ── Score opportunity ─────────────────────────────────────
-                if ($profile) {
-                    $job->loadMissing(['skills', 'company']);
-                    $scoreResult = $scorer->score($profile, $job);
+                            $minScore = $criteria['min_score'] ?? 0;
+                            if ($scoreResult['score'] < $minScore) continue;
 
-                    $minScore = $criteria['min_score'] ?? 0;
-                    if ($scoreResult['score'] < $minScore) continue;
+                            $company    = $job->company;
+                            $contactId  = null;
 
-                    // ── Contact discovery ─────────────────────────────────
-                    $company   = $job->company ?? $job->load('company')->company;
-                    $foundEmail = null;
+                            // Contact discovery only when time is not critical
+                            try {
+                                $foundEmail = $discovery->discover($job);
+                                if ($foundEmail && $company) {
+                                    $contact = $company->contacts()->firstOrCreate(
+                                        ['email' => $foundEmail],
+                                        ['name' => 'Hiring Team', 'contact_type' => 'hiring_manager']
+                                    );
+                                    $contactId = $contact->id;
+                                    if (!$company->contact_email) {
+                                        $company->update(['contact_email' => $foundEmail]);
+                                    }
+                                }
+                            } catch (\Throwable) {
+                                // Contact discovery failure is non-fatal
+                            }
 
-                    // Only run contact discovery if we still have time
-                    if (time() < ($deadline - 10)) {
-                        $foundEmail = $discovery->discover($job);
-                    }
-
-                    $contactId = null;
-                    if ($foundEmail && $company) {
-                        $contact = $company->contacts()->firstOrCreate(
-                            ['email' => $foundEmail],
-                            ['name' => 'Hiring Team', 'contact_type' => 'hiring_manager']
-                        );
-                        $contactId = $contact->id;
-                        if (!$company->contact_email) {
-                            $company->update(['contact_email' => $foundEmail]);
+                            Opportunity::firstOrCreate(
+                                ['user_id' => $this->userId, 'job_listing_id' => $job->id],
+                                [
+                                    'company_id'           => $company?->id,
+                                    'contact_id'           => $contactId,
+                                    'match_score'          => $scoreResult['score'],
+                                    'match_classification' => $scoreResult['classification'],
+                                    'matched_skills'       => $scoreResult['matched_skills'],
+                                    'missing_skills'       => $scoreResult['missing_skills'],
+                                    'match_reasoning'      => $scoreResult['reasoning'],
+                                    'score_breakdown'      => $scoreResult['score_breakdown'],
+                                    'application_url'      => $job->application_url,
+                                ]
+                            );
                         }
                     }
-
-                    Opportunity::firstOrCreate(
-                        [
-                            'user_id'        => $this->userId,
-                            'job_listing_id' => $job->id,
-                        ],
-                        [
-                            'company_id'           => $company?->id,
-                            'contact_id'           => $contactId,
-                            'match_score'          => $scoreResult['score'],
-                            'match_classification' => $scoreResult['classification'],
-                            'matched_skills'       => $scoreResult['matched_skills'],
-                            'missing_skills'       => $scoreResult['missing_skills'],
-                            'match_reasoning'      => $scoreResult['reasoning'],
-                            'score_breakdown'      => $scoreResult['score_breakdown'],
-                            'application_url'      => $job->application_url,
-                        ]
-                    );
-                    $newOpps++;
+                } catch (\Throwable $e) {
+                    Log::warning("Source [{$sourceName}] failed during discovery", [
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Non-fatal — continue with remaining sources
                 }
+
+                $sourcesDone++;
+
+                // Persist incremental progress so frontend polls can see it
+                $run->update([
+                    'new_jobs'      => $totalNew,
+                    'results_count' => $totalFetched,
+                    'meta'          => array_merge($run->fresh()->meta ?? [], [
+                        'current_source' => null,
+                        'sources_done'   => $sourcesDone,
+                        'sources_total'  => $sourceCount,
+                        'source_names'   => $sourceNames,
+                    ]),
+                ]);
             }
 
             $run->update([
                 'status'        => 'completed',
-                'results_count' => $jobs->count(),
-                'new_jobs'      => $newJobs,
+                'results_count' => $totalFetched,
+                'new_jobs'      => $totalNew,
                 'completed_at'  => now(),
+                'meta'          => array_merge($run->fresh()->meta ?? [], [
+                    'current_source' => null,
+                    'sources_done'   => $sourceCount,
+                    'sources_total'  => $sourceCount,
+                    'source_names'   => $sourceNames,
+                ]),
             ]);
 
             Log::info('Job discovery completed', [
-                'search_run_id' => $this->searchRunId,
-                'new_jobs'      => $newJobs,
-                'new_opps'      => $newOpps,
-                'processed'     => $processed,
+                'run_id'   => $this->searchRunId,
+                'new_jobs' => $totalNew,
+                'fetched'  => $totalFetched,
+                'sources'  => $sourcesDone,
             ]);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $run->update([
                 'status'        => 'failed',
                 'error_message' => $e->getMessage(),
                 'completed_at'  => now(),
             ]);
             Log::error('Job discovery failed', [
-                'search_run_id' => $this->searchRunId,
-                'error'         => $e->getMessage(),
+                'run_id' => $this->searchRunId,
+                'error'  => $e->getMessage(),
             ]);
             throw $e;
         }
     }
 
-    /**
-     * If the job fails on the queue, mark the run as failed so the UI doesn't hang.
-     */
     public function failed(\Throwable $e): void
     {
         SearchRun::where('id', $this->searchRunId)
             ->whereIn('status', ['pending', 'running'])
             ->update([
                 'status'        => 'failed',
-                'error_message' => 'Search timed out or failed: ' . $e->getMessage(),
+                'error_message' => 'Search failed: ' . $e->getMessage(),
                 'completed_at'  => now(),
             ]);
     }

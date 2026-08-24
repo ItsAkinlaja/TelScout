@@ -10,11 +10,12 @@ class SearchRun extends Model
     protected $fillable = [
         'user_id', 'provider', 'criteria', 'status',
         'results_count', 'new_companies', 'new_jobs',
-        'error_message', 'started_at', 'completed_at',
+        'error_message', 'meta', 'started_at', 'completed_at',
     ];
 
     protected $casts = [
         'criteria'     => 'array',
+        'meta'         => 'array',
         'started_at'   => 'datetime',
         'completed_at' => 'datetime',
     ];
