@@ -83,6 +83,28 @@ class OpportunityController extends Controller
         return response()->json($opportunity);
     }
 
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids'   => 'sometimes|array',
+            'ids.*' => 'integer',
+            'all'   => 'sometimes|boolean',
+        ]);
+
+        $query = Opportunity::where('user_id', $request->user()->id);
+
+        if (!empty($data['all'])) {
+            $count = $query->count();
+            $query->delete();
+        } else {
+            $ids   = $data['ids'] ?? [];
+            $count = $query->whereIn('id', $ids)->count();
+            $query->whereIn('id', $ids)->delete();
+        }
+
+        return response()->json(['message' => "Deleted {$count} opportunities.", 'count' => $count]);
+    }
+
     public function approve(Request $request, Opportunity $opportunity): JsonResponse
     {
         $this->authorize('update', $opportunity);

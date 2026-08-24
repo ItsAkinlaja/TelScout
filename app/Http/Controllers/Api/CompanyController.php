@@ -93,6 +93,34 @@ class CompanyController extends Controller
         return response()->json(['message' => 'Company deleted.']);
     }
 
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids'   => 'sometimes|array',
+            'ids.*' => 'integer',
+            'all'   => 'sometimes|boolean',
+        ]);
+
+        $userId = $request->user()->id;
+
+        // Only delete companies that belong exclusively to this user's opportunities.
+        // Never delete a company that another user has opportunities or jobs linked to.
+        $deletableIds = Company::whereDoesntHave('opportunities', function ($q) use ($userId) {
+            $q->where('user_id', '!=', $userId);
+        })->pluck('id');
+
+        if (!empty($data['all'])) {
+            $count = Company::whereIn('id', $deletableIds)->count();
+            Company::whereIn('id', $deletableIds)->delete();
+        } else {
+            $ids   = collect($data['ids'] ?? [])->intersect($deletableIds)->values()->all();
+            $count = Company::whereIn('id', $ids)->count();
+            Company::whereIn('id', $ids)->delete();
+        }
+
+        return response()->json(['message' => "Deleted {$count} companies.", 'count' => $count]);
+    }
+
     public function exclude(Company $company): JsonResponse
     {
         $company->update(['is_excluded' => true]);

@@ -111,19 +111,23 @@ class DiscoverJobsJob implements ShouldQueue
                         }
                     }
 
-                    Opportunity::create([
-                        'user_id'              => $this->userId,
-                        'job_listing_id'       => $job->id,
-                        'company_id'           => $company?->id,
-                        'contact_id'           => $contactId,
-                        'match_score'          => $scoreResult['score'],
-                        'match_classification' => $scoreResult['classification'],
-                        'matched_skills'       => $scoreResult['matched_skills'],
-                        'missing_skills'       => $scoreResult['missing_skills'],
-                        'match_reasoning'      => $scoreResult['reasoning'],
-                        'score_breakdown'      => $scoreResult['score_breakdown'],
-                        'application_url'      => $job->application_url,
-                    ]);
+                    Opportunity::firstOrCreate(
+                        [
+                            'user_id'        => $this->userId,
+                            'job_listing_id' => $job->id,
+                        ],
+                        [
+                            'company_id'           => $company?->id,
+                            'contact_id'           => $contactId,
+                            'match_score'          => $scoreResult['score'],
+                            'match_classification' => $scoreResult['classification'],
+                            'matched_skills'       => $scoreResult['matched_skills'],
+                            'missing_skills'       => $scoreResult['missing_skills'],
+                            'match_reasoning'      => $scoreResult['reasoning'],
+                            'score_breakdown'      => $scoreResult['score_breakdown'],
+                            'application_url'      => $job->application_url,
+                        ]
+                    );
                     $newOpps++;
                 }
             }

@@ -47,7 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/profile', [ProfileController::class, 'update']);
     Route::post('/profile/cv', [ProfileController::class, 'uploadCv']);
 
-    // Companies
+    // Companies — bulk route MUST be declared before apiResource to avoid {company} wildcard clash
+    Route::delete('/companies/bulk', [CompanyController::class, 'bulkDestroy']);
     Route::apiResource('companies', CompanyController::class);
     Route::post('/companies/{company}/exclude', [CompanyController::class, 'exclude']);
     Route::post('/companies/{company}/include', [CompanyController::class, 'include']);
@@ -55,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Jobs — filters MUST come before the resource routes so "filters" isn't
     // treated as a {job} wildcard parameter by Laravel's router.
     Route::get('/jobs/filters', [JobController::class, 'filters']);
+    Route::delete('/jobs/bulk', [JobController::class, 'bulkDestroy']);
     Route::get('/jobs', [JobController::class, 'index']);
     Route::get('/jobs/{job}', [JobController::class, 'show']);
     Route::post('/jobs', [JobController::class, 'store']);
@@ -62,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Opportunities
     Route::get('/opportunities', [OpportunityController::class, 'index']);
+    Route::delete('/opportunities/bulk', [OpportunityController::class, 'bulkDestroy']);
     Route::get('/opportunities/{opportunity}', [OpportunityController::class, 'show']);
     Route::post('/opportunities/{opportunity}/approve', [OpportunityController::class, 'approve']);
     Route::post('/opportunities/{opportunity}/reject', [OpportunityController::class, 'reject']);

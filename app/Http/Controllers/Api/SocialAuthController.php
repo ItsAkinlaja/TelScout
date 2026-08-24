@@ -144,17 +144,16 @@ class SocialAuthController extends Controller
             return redirect(config('app.frontend_url', '') . '/login?error=google_failed');
         }
 
-        /** @var User $user */
-        $user = User::where('google_id', $socialUser->getId())
-            ->orWhere('email', $socialUser->getEmail())
-            ->first();
+        /** @var User|null $user */
+        $user = User::where('google_id', $socialUser->getId())->first()
+            ?? User::where('email', $socialUser->getEmail())->first();
 
         if ($user) {
-            // Sync Google ID and avatar if not already set
-            $user->update(array_filter([
-                'google_id' => $user->google_id ?? $socialUser->getId(),
-                'avatar'    => $user->avatar   ?? $socialUser->getAvatar(),
-            ]));
+            // Sync Google ID and avatar only if not already set — never overwrite existing data
+            $updates = [];
+            if (!$user->google_id) $updates['google_id'] = $socialUser->getId();
+            if (!$user->avatar)    $updates['avatar']    = $socialUser->getAvatar();
+            if (!empty($updates))  $user->update($updates);
         } else {
             $user = User::create([
                 'name'      => $socialUser->getName() ?? explode('@', $socialUser->getEmail())[0],

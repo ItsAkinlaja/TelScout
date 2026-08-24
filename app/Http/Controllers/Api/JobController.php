@@ -166,6 +166,36 @@ class JobController extends Controller
         ]);
     }
 
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids'   => 'sometimes|array',
+            'ids.*' => 'integer',
+            'all'   => 'sometimes|boolean',
+        ]);
+
+        $userId = $request->user()->id;
+
+        // Safety: only delete jobs that this user has opportunities for,
+        // OR jobs with no opportunities at all (orphans from their searches).
+        // Never delete a job that another user has an active opportunity on.
+        $deletableIds = JobListing::whereDoesntHave('opportunities', function ($q) use ($userId) {
+            // Exclude jobs that have opportunities from OTHER users
+            $q->where('user_id', '!=', $userId);
+        })->pluck('id');
+
+        if (!empty($data['all'])) {
+            $count = JobListing::whereIn('id', $deletableIds)->count();
+            JobListing::whereIn('id', $deletableIds)->delete();
+        } else {
+            $ids   = collect($data['ids'] ?? [])->intersect($deletableIds)->values()->all();
+            $count = JobListing::whereIn('id', $ids)->count();
+            JobListing::whereIn('id', $ids)->delete();
+        }
+
+        return response()->json(['message' => "Deleted {$count} jobs.", 'count' => $count]);
+    }
+
     public function destroy(JobListing $job): JsonResponse
     {
         $job->delete();
