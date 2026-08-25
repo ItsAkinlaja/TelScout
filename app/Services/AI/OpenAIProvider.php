@@ -27,7 +27,7 @@ class OpenAIProvider implements AIProviderInterface
         $prompt = $this->buildAnalysisPrompt($jobData, $profileData);
 
         $response = $this->chat([
-            ['role' => 'system', 'content' => 'You are an expert job market analyst helping a software engineer evaluate job opportunities. Be concise, honest and specific.'],
+            ['role' => 'system', 'content' => $this->analysisSystemPrompt($profileData)],
             ['role' => 'user',   'content' => $prompt],
         ]);
 
@@ -59,7 +59,7 @@ class OpenAIProvider implements AIProviderInterface
     private function chat(array $messages): string
     {
         if (empty($this->apiKey)) {
-            throw new RuntimeException('AI API key is not configured. Go to Settings → AI to add your OpenAI key.');
+            throw new RuntimeException('AI API key is not configured. Go to Settings â†’ AI to add your OpenAI key.');
         }
 
         $response = Http::withToken($this->apiKey)
@@ -85,7 +85,7 @@ class OpenAIProvider implements AIProviderInterface
     private function buildAnalysisPrompt(array $job, array $profile): string
     {
         $candidateName = $profile['full_name'] ?? 'Candidate';
-        $candidateTitle = $profile['primary_title'] ?? 'Software Engineer';
+        $candidateTitle = $profile['primary_title'] ?? 'Professional';
         $candidateSkills = $this->formatList($profile['skills'] ?? []);
         $candidateExp = $this->formatExperience($profile['experiences'] ?? []);
         $candidateYears = $profile['years_of_experience'] ?? 'Unknown';
@@ -122,7 +122,7 @@ PROMPT;
         $greeting    = $contactName ? "Hi {$contactName}," : 'Hi,';
 
         $candidateName = $profile['full_name'] ?? 'Candidate';
-        $candidateTitle = $profile['primary_title'] ?? 'Software Engineer';
+        $candidateTitle = $profile['primary_title'] ?? 'Professional';
         $candidatePortfolio = $profile['portfolio_url'] ?? '';
         $candidateSkills = $this->formatList(array_slice($profile['skills'] ?? [], 0, 8));
         $candidateExp = $this->formatExperience($profile['experiences'] ?? []);
@@ -153,7 +153,6 @@ INSTRUCTIONS:
 - Keep it under 200 words
 - Be professional and genuine
 - Mention 1-2 specific technologies from the job that I actually know
-- Reference my real experience (Vigilearn, Avario Digitals) only if relevant
 - Do NOT fabricate projects, salary, or recruiter names
 - End with: "Portfolio: {$candidatePortfolio}"
 - sign off: "best,\n{$candidateName}"
@@ -161,9 +160,15 @@ INSTRUCTIONS:
 PROMPT;
     }
 
+
+    private function analysisSystemPrompt(array $profile): string
+    {
+        $title = $profile['primary_title'] ?? 'professional';
+        return "You are an expert job market analyst helping a {$title} evaluate job opportunities. Be concise, honest and specific.";
+    }
     private function emailSystemPrompt(): string
     {
-        return 'You are writing genuine, concise professional outreach emails and resume tailoring tips for a software engineer. ' .
+        return 'You are writing genuine, concise professional outreach emails and resume tailoring tips for a job candidate. ' .
                'Never fabricate experience, projects, or company information. ' .
                'Be specific and honest. Never use hollow phrases. ' .
                'The email must be under 200 words. ' .
@@ -175,7 +180,7 @@ PROMPT;
         if (preg_match('/^SUBJECT:\s*(.+)$/mi', $response, $m)) {
             return trim($m[1]);
         }
-        return ($profile['primary_title'] ?? 'Software Engineer') . ' — ' . ($profile['full_name'] ?? '');
+        return ($profile['primary_title'] ?? 'Professional') . ' â€” ' . ($profile['full_name'] ?? '');
     }
 
     private function extractBody(string $response): string

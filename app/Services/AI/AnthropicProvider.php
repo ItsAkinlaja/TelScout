@@ -33,7 +33,7 @@ class AnthropicProvider implements AIProviderInterface
         $prompt = $this->buildAnalysisPrompt($jobData, $profileData);
 
         $response = $this->message(
-            system: 'You are an expert job market analyst helping a software engineer evaluate job opportunities. Be concise, honest and specific.',
+            system: $this->analysisSystemPrompt($profileData),
             user: $prompt,
         );
 
@@ -62,12 +62,12 @@ class AnthropicProvider implements AIProviderInterface
         ];
     }
 
-    // ── HTTP ──────────────────────────────────────────────────────────────────
+    // â”€â”€ HTTP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private function message(string $system, string $user): string
     {
         if (empty($this->apiKey)) {
-            throw new RuntimeException('Anthropic API key is not configured. Go to Settings → AI to add your key.');
+            throw new RuntimeException('Anthropic API key is not configured. Go to Settings â†’ AI to add your key.');
         }
 
         $response = Http::withHeaders([
@@ -97,12 +97,12 @@ class AnthropicProvider implements AIProviderInterface
         return $response->json('content.0.text', '');
     }
 
-    // ── Prompt builders (mirrors OpenAIProvider) ──────────────────────────────
+    // â”€â”€ Prompt builders (mirrors OpenAIProvider) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private function buildAnalysisPrompt(array $job, array $profile): string
     {
         $candidateName   = $profile['full_name']        ?? 'Candidate';
-        $candidateTitle  = $profile['primary_title']    ?? 'Software Engineer';
+        $candidateTitle  = $profile['primary_title']    ?? 'Professional';
         $candidateSkills = $this->formatList($profile['skills'] ?? []);
         $candidateExp    = $this->formatExperience($profile['experiences'] ?? []);
         $candidateYears  = $profile['years_of_experience'] ?? 'Unknown';
@@ -138,7 +138,7 @@ PROMPT;
         $contactName        = $job['contact_name']     ?? null;
         $greeting           = $contactName ? "Hi {$contactName}," : 'Hi,';
         $candidateName      = $profile['full_name']      ?? 'Candidate';
-        $candidateTitle     = $profile['primary_title']  ?? 'Software Engineer';
+        $candidateTitle     = $profile['primary_title']  ?? 'Professional';
         $candidatePortfolio = $profile['portfolio_url']  ?? '';
         $candidateSkills    = $this->formatList(array_slice($profile['skills'] ?? [], 0, 8));
         $candidateExp       = $this->formatExperience($profile['experiences'] ?? []);
@@ -175,23 +175,29 @@ INSTRUCTIONS:
 PROMPT;
     }
 
+
+    private function analysisSystemPrompt(array $profile): string
+    {
+        $title = $profile['primary_title'] ?? 'professional';
+        return "You are an expert job market analyst helping a {$title} evaluate job opportunities. Be concise, honest and specific.";
+    }
     private function emailSystemPrompt(): string
     {
-        return 'You are writing genuine, concise professional outreach emails and resume tailoring tips for a software engineer. ' .
+        return 'You are writing genuine, concise professional outreach emails and resume tailoring tips for a job candidate. ' .
                'Never fabricate experience, projects, or company information. ' .
                'Be specific and honest. Never use hollow phrases. ' .
                'The email must be under 200 words. ' .
                'The CV tailoring section should provide 3-4 concrete, actionable tips specific to this job.';
     }
 
-    // ── Response parsers ──────────────────────────────────────────────────────
+    // â”€â”€ Response parsers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private function extractSubject(string $response, array $profile): string
     {
         if (preg_match('/^subject:\s*(.+)$/mi', $response, $m)) {
             return trim($m[1]);
         }
-        return ($profile['primary_title'] ?? 'Software Engineer') . ' — ' . ($profile['full_name'] ?? '');
+        return ($profile['primary_title'] ?? 'Professional') . ' â€” ' . ($profile['full_name'] ?? '');
     }
 
     private function extractBody(string $response): string
@@ -207,7 +213,7 @@ PROMPT;
         return count($parts) > 1 ? trim($parts[1]) : null;
     }
 
-    // ── Utilities ─────────────────────────────────────────────────────────────
+    // â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private function formatList(array $items): string
     {

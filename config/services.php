@@ -60,4 +60,16 @@ return [
         'api_key' => env('REED_API_KEY'),
     ],
 
+    // SerpAPI — Google Jobs aggregator (Jobberman, LinkedIn NG, Indeed NG, MyJobMag, etc.)
+    // Free tier: 100 searches/month. Register at https://serpapi.com
+    'serpapi' => [
+        'key' => env('SERPAPI_KEY'),
+    ],
+
+    // OpenWebNinja — Real-time Google Jobs data (second Google Jobs source for redundancy)
+    // https://openwebninja.com
+    'openwebninja' => [
+        'api_key' => env('OPENWEBNINJA_API_KEY'),
+    ],
+
 ];

@@ -430,12 +430,12 @@ export default function DiscoverPage() {
         status:   'active',
       }
 
-      // Keyword filter within results
+      // Keyword filter within results — use the first keyword as the search term
       if (resultSearch.trim()) {
         params.search = resultSearch.trim()
       } else if (lastCriteria?.keywords?.length) {
-        // Scope results to the searched keywords — prevents showing unrelated DB jobs
-        params.search = lastCriteria.keywords.slice(0, 3).join(' OR ')
+        // Pass keywords separately so the backend can do proper OR matching
+        params.keywords = lastCriteria.keywords.slice(0, 5).join(',')
       }
 
       // Remote filter
