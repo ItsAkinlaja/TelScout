@@ -48,11 +48,9 @@ class JobSourceManager
         $remoteOnly = $criteria['remote_only'] ?? false;
 
         if ($remoteOnly) {
-            // Only keep remote jobs
             $filtered = $filtered->filter(fn($j) => $this->isRemote($j));
         } elseif (!empty($locations) && !$this->hasWorldwideLocation($locations)) {
-            // Filter by requested locations
-            // We allow remote jobs ONLY if they don't have a specific location restriction that excludes us
+            // Include jobs matching location OR remote jobs (unless restricted to other country)
             $filtered = $filtered->filter(fn($j) =>
                 $this->matchesLocation($j['location'] ?? '', $locations) ||
                 ($this->isRemote($j) && !$this->isRestrictedToOtherCountry($j['location'] ?? '', $locations))
@@ -80,47 +78,56 @@ class JobSourceManager
     {
         if (!empty($job['is_remote'])) return true;
         $loc = strtolower($job['location'] ?? '');
-        return str_contains($loc, 'remote') || str_contains($loc, 'worldwide') || str_contains($loc, 'anywhere');
+        return str_contains($loc, 'remote')
+            || str_contains($loc, 'worldwide')
+            || str_contains($loc, 'anywhere')
+            || $loc === '';  // no location = treat as remote/global
     }
 
     /**
      * Check if the job location matches any of the requested locations.
-     * Case-insensitive, partial match (e.g. "Nigeria" matches "Lagos, Nigeria").
+     * Handles compound strings like "Lagos Nigeria", "Lagos, Nigeria".
      */
     private function matchesLocation(string $jobLocation, array $requestedLocations): bool
     {
         $jl = strtolower(trim($jobLocation));
+
+        // Always include remote jobs — they're open to all locations
+        if ($this->isRemote(['location' => $jobLocation, 'is_remote' => false])) {
+            return true;
+        }
+
         $aliases = [
-            'uk' => ['united kingdom', 'great britain', 'england', 'scotland', 'wales', 'ni'],
+            'uk'  => ['united kingdom', 'great britain', 'england', 'scotland', 'wales'],
             'usa' => ['united states', 'america', 'us'],
-            'us' => ['united states', 'america', 'usa'],
+            'us'  => ['united states', 'america', 'usa'],
         ];
 
         foreach ($requestedLocations as $loc) {
             $loc = strtolower(trim($loc));
+            if ($loc === '') continue;
 
-            // Skip wildcards
-            if (in_array($loc, ['worldwide', 'remote', 'anywhere', 'global', ''])) continue;
+            // Skip wildcards — handled upstream
+            if (in_array($loc, ['worldwide', 'remote', 'anywhere', 'global', 'all'])) return true;
 
-            // Direct or partial match
-            if (str_contains($jl, $loc) || str_contains($loc, $jl)) {
-                return true;
+            // Split compound location into individual terms: "Lagos Nigeria" → ["lagos", "nigeria"]
+            $terms = preg_split('/[\s,]+/', $loc);
+            $terms = array_filter($terms, fn($t) => strlen($t) > 2);
+
+            // Any single term match is sufficient (e.g. "Nigeria" matches "Lagos, Nigeria")
+            foreach ($terms as $term) {
+                if (str_contains($jl, $term)) return true;
             }
 
-            // Alias match (e.g. "UK" matches "United Kingdom")
+            // Direct whole-string match or reverse contains
+            if (str_contains($jl, $loc) || str_contains($loc, $jl)) return true;
+
+            // Alias match
             foreach ($aliases as $alias => $names) {
                 if ($loc === $alias || in_array($loc, $names)) {
                     if (str_contains($jl, $alias) || collect($names)->contains(fn($n) => str_contains($jl, $n))) {
                         return true;
                     }
-                }
-            }
-
-            // Country-level match: "Nigeria" matches "Lagos, Nigeria" or "Abuja Nigeria"
-            $parts = preg_split('/[\s,]+/', $loc);
-            foreach ($parts as $part) {
-                if (strlen($part) > 3 && str_contains($jl, strtolower($part))) {
-                    return true;
                 }
             }
         }

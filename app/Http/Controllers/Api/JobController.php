@@ -67,6 +67,20 @@ class JobController extends Controller
             $query->where('posted_at', '>=', now()->subDays($request->input('date_posted')));
         }
 
+        // Location filter — partial match on the location column (used by Discover results)
+        if ($request->filled('location_filter')) {
+            $locationTerms = array_filter(array_map('trim', explode(',', $request->input('location_filter'))));
+            if (!empty($locationTerms)) {
+                $query->where(function ($q) use ($locationTerms) {
+                    foreach ($locationTerms as $term) {
+                        $q->orWhere('location', 'like', "%{$term}%");
+                    }
+                    // Always include remote jobs alongside location results
+                    $q->orWhere('is_remote', true);
+                });
+            }
+        }
+
         $jobs = $query->orderByDesc('posted_at')
             ->paginate($request->input('per_page', 20));
 

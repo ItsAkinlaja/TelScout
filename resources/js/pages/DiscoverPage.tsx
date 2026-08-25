@@ -422,27 +422,34 @@ export default function DiscoverPage() {
 
   // Load results once completed — scoped to the search criteria (location, keywords, remote)
   const { data: resultsData, isLoading: resultsLoading } = useQuery({
-    queryKey: ['discover-results', activeRunId, resultsPage, resultSearch, resultRemote, lastCriteria],
+    queryKey: ['discover-results', activeRunId, resultsPage, resultSearch, resultRemote],
     queryFn:  () => {
       const params: Record<string, any> = {
-        page: resultsPage,
+        page:     resultsPage,
         per_page: 20,
-        status: 'active',
+        status:   'active',
       }
-      // Apply keyword search within results
-      if (resultSearch.trim()) params.search = resultSearch.trim()
-      // Apply remote filter
-      if (resultRemote) params.remote = true
-      // Apply location filter from the original search — only show jobs that match
+
+      // Keyword filter within results
+      if (resultSearch.trim()) {
+        params.search = resultSearch.trim()
+      }
+
+      // Remote filter
+      if (resultRemote || lastCriteria?.remote_only) {
+        params.remote = true
+      }
+
+      // Location filter — scope to what was actually searched
       if (lastCriteria?.locations?.length && !lastCriteria.remote_only) {
         params.location_filter = lastCriteria.locations.join(',')
       }
-      if (lastCriteria?.remote_only) params.remote = true
-      // Filter by keywords too — show jobs from this search run
-      if (lastCriteria?.keywords?.length) {
-        params.search = (resultSearch.trim() ? resultSearch.trim() + ' ' : '') +
-          (lastCriteria.keywords.slice(0, 2).join(' '))
+
+      // Date filter — only show jobs from this search window
+      if (lastCriteria?.days_old) {
+        params.date_posted = lastCriteria.days_old
       }
+
       return api.get('/jobs', { params }).then(r => r.data)
     },
     enabled: runStatus === 'completed',
