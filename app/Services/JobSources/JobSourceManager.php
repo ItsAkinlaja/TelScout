@@ -46,33 +46,48 @@ class JobSourceManager
             ->values();
 
         // ── Keyword relevance filter ───────────────────────────────────────────
-        // Post-fetch: ensure the job title or description actually relates to the
-        // searched keywords. This catches cases where broad-category APIs (e.g.
-        // The Muse "Engineering" category) return unrelated roles like
-        // "Product Manager" when the user searched "software engineer".
+        // Post-fetch: ensure the job actually matches what the user searched.
+        // Uses a scoring approach: title match = strong, description match = weak.
+        // A job passes if it scores at least 1 point.
         $keywords = $criteria['keywords'] ?? [];
         if (!empty($keywords)) {
             $filtered = $filtered->filter(function ($job) use ($keywords) {
                 $title = strtolower($job['title'] ?? '');
-                $desc  = strtolower(substr($job['description'] ?? '', 0, 500));
+                $desc  = strtolower(substr($job['description'] ?? '', 0, 800));
 
                 foreach ($keywords as $kw) {
                     $kw = strtolower(trim($kw));
                     if (empty($kw)) continue;
 
-                    // Split multi-word keywords ("full stack developer" → ["full", "stack", "developer"])
-                    $parts = preg_split('/[\s\-_]+/', $kw);
-
-                    // Check direct keyword match in title
+                    // Exact phrase match in title (strongest signal)
                     if (str_contains($title, $kw)) return true;
 
-                    // Check each significant word in title
-                    foreach ($parts as $part) {
-                        if (strlen($part) > 3 && str_contains($title, $part)) return true;
+                    // Exact phrase in description
+                    if (str_contains($desc, $kw)) return true;
+
+                    // Multi-word keyword: ALL significant words must appear in title
+                    // e.g. "full stack developer" — "full","stack","developer" all in title
+                    $parts = array_filter(
+                        preg_split('/[\s\-_\/]+/', $kw) ?: [],
+                        fn($p) => strlen($p) >= 4
+                    );
+                    if (count($parts) >= 2) {
+                        $allInTitle = true;
+                        foreach ($parts as $part) {
+                            if (!str_contains($title, $part)) {
+                                $allInTitle = false;
+                                break;
+                            }
+                        }
+                        if ($allInTitle) return true;
                     }
 
-                    // Looser description match (keyword appears prominently)
-                    if (str_contains($desc, $kw)) return true;
+                    // Single-word keyword with 6+ chars: match title only (not description)
+                    // e.g. "python", "laravel", "devops" — avoids false positives
+                    if (count($parts) === 1) {
+                        $word = reset($parts);
+                        if (strlen($word) >= 6 && str_contains($title, $word)) return true;
+                    }
                 }
 
                 return false;

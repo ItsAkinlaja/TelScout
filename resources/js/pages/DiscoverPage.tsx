@@ -413,7 +413,10 @@ export default function DiscoverPage() {
     if (!profile || form.keywords) return
     const keywords  = [...(profile.preferred_roles ?? []), ...(profile.preferred_technologies ?? [])].slice(0, 5).join(', ')
     const locations = (profile.preferred_locations ?? []).join(', ')
-    setForm(f => ({ ...f, keywords, locations, remote_only: profile.work_preference === 'remote' }))
+    // Note: we intentionally do NOT pre-fill remote_only from the profile.
+    // remote_only=true would filter out all on-site/hybrid Nigerian jobs.
+    // The user can toggle it manually if they want remote-only results.
+    setForm(f => ({ ...f, keywords, locations }))
   }, [profile])
 
   // Poll run status — 1 s while running/pending for live source progress, 3 s otherwise
@@ -441,24 +444,20 @@ export default function DiscoverPage() {
         status:   'active',
       }
 
-      // Only show jobs this user has opportunities for (from their searches).
-      // This is the correct way to scope Discover results — it shows exactly
-      // what was fetched, without over-filtering by keyword.
-      params.has_opportunity = true
+      // Scope results to exactly this search run — shows only what was fetched now,
+      // not jobs from previous searches. Most precise scoping possible.
+      if (activeRunId) {
+        params.search_run_id = activeRunId
+      }
 
       // Manual search box — user-typed filter on title/company
       if (resultSearch.trim()) {
         params.search = resultSearch.trim()
       }
 
-      // Remote filter — only when user explicitly toggles it
+      // Remote filter — only when user explicitly toggles it in the results panel
       if (resultRemote) {
         params.remote = true
-      }
-
-      // Date filter — only show jobs from this search window
-      if (lastCriteria?.days_old) {
-        params.date_posted = lastCriteria.days_old
       }
 
       return api.get('/jobs', { params }).then(r => r.data)
@@ -629,7 +628,10 @@ export default function DiscoverPage() {
                 onClick={() => {
                   const keywords  = [...(profile.preferred_roles ?? []), ...(profile.preferred_technologies ?? [])].slice(0, 5).join(', ')
                   const locations = (profile.preferred_locations ?? []).join(', ')
-                  setForm(f => ({ ...f, keywords, locations, remote_only: profile.work_preference === 'remote' }))
+                  // Note: we intentionally do NOT pre-fill remote_only from the profile.
+    // remote_only=true would filter out all on-site/hybrid Nigerian jobs.
+    // The user can toggle it manually if they want remote-only results.
+    setForm(f => ({ ...f, keywords, locations }))
                 }}
                 style={{ fontSize: 12.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}
               >

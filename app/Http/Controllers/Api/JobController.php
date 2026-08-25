@@ -116,10 +116,17 @@ class JobController extends Controller
             $query->where('posted_at', '>=', now()->subDays($request->input('date_posted')));
         }
 
-        // has_opportunity=true — only show jobs this user has opportunities for (from their searches)
+        // has_opportunity=true — only show jobs this user has opportunities for
         if ($request->boolean('has_opportunity')) {
             $userId = $request->user()->id;
             $query->whereHas('opportunities', fn($q) => $q->where('user_id', $userId));
+        }
+
+        // search_run_id — scope results to a specific search run (most precise scoping)
+        if ($request->filled('search_run_id')) {
+            $userId = $request->user()->id;
+            $runId  = $request->integer('search_run_id');
+            $query->whereHas('opportunities', fn($q) => $q->where('user_id', $userId)->where('search_run_id', $runId));
         }
 
         // Location filter — partial match on the location column (used by Discover results)
