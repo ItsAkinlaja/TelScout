@@ -38,17 +38,30 @@ class JobController extends Controller
         }
 
         // Multi-keyword OR filter (used by Discover results panel)
+        // Each comma-separated keyword is treated as a phrase — the job must match
+        // at least one keyword phrase in the title OR description.
+        // Individual words within a phrase are only used as fallback if the full phrase fails.
         if ($request->filled('keywords')) {
-            $terms = array_filter(array_map('trim', explode(',', $request->input('keywords'))));
+            $terms = array_values(array_filter(array_map('trim', explode(',', $request->input('keywords')))));
             if (!empty($terms)) {
-                $query->where(function ($q) use ($terms) {
+                $query->where(function ($outer) use ($terms) {
                     foreach ($terms as $term) {
-                        // Match any keyword in the job title
-                        $q->orWhere('title', 'like', "%{$term}%");
-                        // Also match individual significant words from multi-word keywords
-                        $words = array_filter(preg_split('/[\s\-_]+/', $term), fn($w) => strlen($w) > 3);
+                        $outer->orWhere(function ($q) use ($term) {
+                            // Whole phrase match in title or description
+                            $q->where('title', 'like', "%{$term}%")
+                              ->orWhere('description', 'like', "%{$term}%");
+                        });
+                        // Also try significant individual words from the phrase
+                        // (e.g. "Full Stack Developer" → also match "developer", "stack")
+                        $words = array_values(array_filter(
+                            preg_split('/[\s\-_\/]+/', $term) ?: [],
+                            fn($w) => strlen($w) >= 4
+                        ));
                         foreach ($words as $word) {
-                            $q->orWhere('title', 'like', "%{$word}%");
+                            $outer->orWhere(function ($q) use ($word) {
+                                $q->where('title', 'like', "%{$word}%")
+                                  ->orWhere('description', 'like', "%{$word}%");
+                            });
                         }
                     }
                 });
@@ -65,8 +78,9 @@ class JobController extends Controller
                   ->orWhere('location', 'like', '%remote%')
                   ->orWhere('location', 'like', '%worldwide%')
                   ->orWhere('location', 'like', '%anywhere%')
-                  ->orWhereNull('location')
-                  ->orWhere('location', '');
+                  ->orWhere('location', 'like', '%anywhere%');
+                  // Note: null/empty location is NOT treated as remote —
+                  // it just means the location wasn't captured from the source.
             });
         }
 
@@ -100,6 +114,12 @@ class JobController extends Controller
 
         if ($request->filled('date_posted')) {
             $query->where('posted_at', '>=', now()->subDays($request->input('date_posted')));
+        }
+
+        // has_opportunity=true — only show jobs this user has opportunities for (from their searches)
+        if ($request->boolean('has_opportunity')) {
+            $userId = $request->user()->id;
+            $query->whereHas('opportunities', fn($q) => $q->where('user_id', $userId));
         }
 
         // Location filter — partial match on the location column (used by Discover results)

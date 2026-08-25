@@ -441,22 +441,19 @@ export default function DiscoverPage() {
         status:   'active',
       }
 
-      // Keyword filter within results — use the first keyword as the search term
+      // Only show jobs this user has opportunities for (from their searches).
+      // This is the correct way to scope Discover results — it shows exactly
+      // what was fetched, without over-filtering by keyword.
+      params.has_opportunity = true
+
+      // Manual search box — user-typed filter on title/company
       if (resultSearch.trim()) {
         params.search = resultSearch.trim()
-      } else if (lastCriteria?.keywords?.length) {
-        // Pass keywords separately so the backend can do proper OR matching
-        params.keywords = lastCriteria.keywords.slice(0, 5).join(',')
       }
 
-      // Remote filter
+      // Remote filter — only when user explicitly toggles it
       if (resultRemote) {
         params.remote = true
-        // When remote only: don't restrict by location — remote jobs are global
-      } else if (lastCriteria?.locations?.length) {
-        // Location filter — show jobs in that location OR remote jobs (global)
-        params.location_filter = lastCriteria.locations.join(',')
-        params.include_remote = true  // backend will also include is_remote=true
       }
 
       // Date filter — only show jobs from this search window
