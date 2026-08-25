@@ -29,6 +29,8 @@ class JobSourceManager
 
         foreach ($this->sources as $source) {
             try {
+                // Each source has its own Http::timeout() — if it times out or throws,
+                // the exception is caught here and we move on to the next source.
                 $results = $source->search($criteria);
                 $all = $all->merge($results);
             } catch (\Throwable $e) {

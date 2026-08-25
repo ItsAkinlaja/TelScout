@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -23,17 +24,40 @@ return new class extends Migration
             $table->index('last_seen_at');
         });
 
-        // Add unique constraint separately, after deduplicating any existing rows.
-        // We keep the most recent row where duplicates exist.
-        \DB::statement('
-            DELETE j1 FROM job_listings j1
-            INNER JOIN job_listings j2
-            WHERE j1.id < j2.id
-              AND j1.source IS NOT NULL
-              AND j1.external_id IS NOT NULL
-              AND j1.source = j2.source
-              AND j1.external_id = j2.external_id
-        ');
+        // Deduplicate existing rows before adding the unique constraint.
+        // Uses a DB-agnostic approach so it works on both MySQL (production)
+        // and SQLite (test environment).
+        $driver = DB::getDriverName();
+
+        if ($driver === 'mysql' || $driver === 'mariadb') {
+            // MySQL supports the efficient multi-table DELETE JOIN
+            DB::statement("
+                DELETE j1 FROM job_listings j1
+                INNER JOIN job_listings j2
+                  ON j1.source = j2.source
+                 AND j1.external_id = j2.external_id
+                 AND j1.id < j2.id
+                WHERE j1.source IS NOT NULL
+                  AND j1.external_id IS NOT NULL
+            ");
+        } else {
+            // SQLite / PostgreSQL compatible: delete older duplicates via subquery
+            DB::table('job_listings')
+                ->whereNotNull('source')
+                ->whereNotNull('external_id')
+                ->whereIn('id', function ($query) {
+                    $query->selectRaw('j1.id')
+                        ->from('job_listings as j1')
+                        ->join('job_listings as j2', function ($join) {
+                            $join->on('j1.source', '=', 'j2.source')
+                                 ->on('j1.external_id', '=', 'j2.external_id')
+                                 ->whereColumn('j1.id', '<', 'j2.id');
+                        })
+                        ->whereNotNull('j1.source')
+                        ->whereNotNull('j1.external_id');
+                })
+                ->delete();
+        }
 
         Schema::table('job_listings', function (Blueprint $table) {
             $table->unique(['source', 'external_id'], 'job_listings_source_external_id_unique');

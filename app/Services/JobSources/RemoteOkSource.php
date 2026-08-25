@@ -38,24 +38,33 @@ class RemoteOkSource implements JobSourceInterface
             if (isset($data[0]['legal'])) array_shift($data); // remove legal notice
 
             return collect($data)
-                ->filter(fn($j) => isset($j['position']) && ($j['date'] ?? 0) >= $cutoff)
-                ->map(fn($j) => [
-                    'title'            => $j['position'] ?? '',
-                    'company'          => $j['company'] ?? '',
-                    'company_url'      => $j['company_url'] ?? null,
-                    'location'         => 'Remote',
-                    'is_remote'        => true,
-                    'description'      => strip_tags($j['description'] ?? ''),
-                    'salary_min'       => $j['salary_min'] ?? null,
-                    'salary_max'       => $j['salary_max'] ?? null,
-                    'salary_currency'  => 'USD',
-                    'application_url'  => $j['apply_url'] ?? $j['url'] ?? null,
-                    'source_url'       => $j['url'] ?? null,
-                    'external_id'      => (string) ($j['id'] ?? ''),
-                    'tags'             => $j['tags'] ?? [],
-                    'posted_at'        => isset($j['date']) ? date('Y-m-d H:i:s', $j['date']) : null,
-                    'source'           => 'remoteok',
-                ]);
+                ->filter(function ($j) use ($cutoff) {
+                    if (!isset($j['position'])) return false;
+                    $ts = $j['date'] ?? 0;
+                    if (is_string($ts) && !is_numeric($ts)) $ts = strtotime($ts) ?: 0;
+                    return (int) $ts >= $cutoff;
+                })
+                ->map(function ($j) {
+                    $ts = $j['date'] ?? null;
+                    if (is_string($ts) && !is_numeric($ts)) $ts = strtotime($ts) ?: null;
+                    return [
+                        'title'           => $j['position'] ?? '',
+                        'company'         => $j['company'] ?? '',
+                        'company_url'     => $j['company_url'] ?? null,
+                        'location'        => 'Remote',
+                        'is_remote'       => true,
+                        'description'     => strip_tags($j['description'] ?? ''),
+                        'salary_min'      => $j['salary_min'] ?? null,
+                        'salary_max'      => $j['salary_max'] ?? null,
+                        'salary_currency' => 'USD',
+                        'application_url' => $j['apply_url'] ?? $j['url'] ?? null,
+                        'source_url'      => $j['url'] ?? null,
+                        'external_id'     => (string) ($j['id'] ?? ''),
+                        'tags'            => $j['tags'] ?? [],
+                        'posted_at'       => $ts ? date('Y-m-d H:i:s', (int) $ts) : null,
+                        'source'          => 'remoteok',
+                    ];
+                });
 
         } catch (\Exception $e) {
             Log::warning('RemoteOK fetch failed', ['error' => $e->getMessage()]);

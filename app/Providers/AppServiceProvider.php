@@ -7,12 +7,16 @@ use App\Models\Opportunity;
 use App\Policies\EmailPolicy;
 use App\Policies\OpportunityPolicy;
 use App\Services\JobSources\AdzunaSource;
+use App\Services\JobSources\AfricaWorkSource;
 use App\Services\JobSources\ArbeitnowSource;
+use App\Services\JobSources\IndeedNigeriaSource;
 use App\Services\JobSources\JobSourceManager;
 use App\Services\JobSources\JSearchSource;
+use App\Services\JobSources\OpenWebNinjaSource;
 use App\Services\JobSources\ReedSource;
 use App\Services\JobSources\RemoteOkSource;
 use App\Services\JobSources\RemotiveSource;
+use App\Services\JobSources\SerpApiSource;
 use App\Services\JobSources\TheMuseSource;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -33,11 +37,25 @@ class AppServiceProvider extends ServiceProvider
         // manually via JobSourceController::trigger().
         $this->app->singleton(JobSourceManager::class, function () {
             $sources = [
-                new RemoteOkSource(),
-                new RemotiveSource(),
-                new ArbeitnowSource(),
-                new TheMuseSource(),
+                // ── Free sources, no key needed ───────────────────────────
+                new RemoteOkSource(),     // Global remote jobs
+                new RemotiveSource(),     // Global remote jobs
+                new ArbeitnowSource(),    // European + global jobs
+                new TheMuseSource(),      // US-focused tech jobs
+
+                // ── Nigerian & African sources ────────────────────────────
+                new IndeedNigeriaSource(), // Indeed Nigeria (ng.indeed.com)
+                new AfricaWorkSource(),    // Pan-African job board (Nigeria, Ghana, Kenya…)
             ];
+
+            // ── Key-gated sources (enabled when .env is configured) ───────
+
+            // SerpAPI — Google Jobs: surfaces Jobberman, LinkedIn NG, MyJobMag,
+            // and every other source Google indexes. 100 free searches/month.
+            // Register at https://serpapi.com
+            if (config('services.serpapi.key')) {
+                $sources[] = new SerpApiSource();
+            }
 
             if (config('services.adzuna.app_id') && config('services.adzuna.app_key')) {
                 $sources[] = new AdzunaSource();
@@ -49,6 +67,11 @@ class AppServiceProvider extends ServiceProvider
 
             if (config('services.reed.api_key')) {
                 $sources[] = new ReedSource();
+            }
+
+            // OpenWebNinja — second Google Jobs source, runs alongside SerpAPI
+            if (config('services.openwebninja.api_key')) {
+                $sources[] = new OpenWebNinjaSource();
             }
 
             return new JobSourceManager($sources);

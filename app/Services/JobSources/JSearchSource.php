@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * JSearch — powered by Indeed, Glassdoor, LinkedIn aggregation via RapidAPI.
+ * JSearch â€” powered by Indeed, Glassdoor, LinkedIn aggregation via RapidAPI.
  * Free tier: 200 requests/month. Covers worldwide postings.
  * https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
  *
@@ -63,6 +63,7 @@ class JSearchSource implements JobSourceInterface
                     'page'        => '1',
                     'num_pages'   => '2',
                     'date_posted' => $datePosted,
+                    'country'     => $this->resolveCountry($criteria['locations'] ?? []),
                 ]);
 
             if ($response->failed()) {
@@ -101,5 +102,32 @@ class JSearchSource implements JobSourceInterface
         }
 
         return $results;
+    }
+
+    private function resolveCountry(array $locations): string
+    {
+        $map = [
+            'nigeria'       => 'ng',
+            'lagos'         => 'ng',
+            'abuja'         => 'ng',
+            'ghana'         => 'gh',
+            'kenya'         => 'ke',
+            'south africa'  => 'za',
+            'uk'            => 'gb',
+            'united kingdom'=> 'gb',
+            'united states' => 'us',
+            'usa'           => 'us',
+            'canada'        => 'ca',
+            'australia'     => 'au',
+            'germany'       => 'de',
+            'india'         => 'in',
+        ];
+        foreach ($locations as $loc) {
+            $l = strtolower(trim($loc));
+            foreach ($map as $name => $code) {
+                if (str_contains($l, $name)) return $code;
+            }
+        }
+        return 'us'; // default
     }
 }

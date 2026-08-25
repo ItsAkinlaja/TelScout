@@ -37,12 +37,37 @@ class JobController extends Controller
             }
         }
 
+        // Multi-keyword OR filter (used by Discover results panel)
+        if ($request->filled('keywords')) {
+            $terms = array_filter(array_map('trim', explode(',', $request->input('keywords'))));
+            if (!empty($terms)) {
+                $query->where(function ($q) use ($terms) {
+                    foreach ($terms as $term) {
+                        // Match any keyword in the job title
+                        $q->orWhere('title', 'like', "%{$term}%");
+                        // Also match individual significant words from multi-word keywords
+                        $words = array_filter(preg_split('/[\s\-_]+/', $term), fn($w) => strlen($w) > 3);
+                        foreach ($words as $word) {
+                            $q->orWhere('title', 'like', "%{$word}%");
+                        }
+                    }
+                });
+            }
+        }
+
         if ($request->filled('company_id')) {
             $query->where('company_id', $request->input('company_id'));
         }
 
         if ($request->boolean('remote')) {
-            $query->where('is_remote', true);
+            $query->where(function ($q) {
+                $q->where('is_remote', true)
+                  ->orWhere('location', 'like', '%remote%')
+                  ->orWhere('location', 'like', '%worldwide%')
+                  ->orWhere('location', 'like', '%anywhere%')
+                  ->orWhereNull('location')
+                  ->orWhere('location', '');
+            });
         }
 
         if ($request->filled('status')) {
