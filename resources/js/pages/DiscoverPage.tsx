@@ -32,16 +32,23 @@ const DEFAULT_FORM: SearchForm = {
 // ── Source registry ───────────────────────────────────────────────────────────
 
 const SOURCES: Record<string, { label: string; color: string }> = {
-  remoteok:   { label: 'RemoteOK',   color: '#28a745' },
-  remotive:   { label: 'Remotive',   color: '#ef4444' },
-  arbeitnow:  { label: 'Arbeitnow',  color: '#f59e0b' },
-  adzuna:     { label: 'Adzuna',     color: '#e55a1d' },
-  the_muse:   { label: 'The Muse',   color: '#e91e8c' },
-  jsearch:    { label: 'JSearch',    color: '#1a73e8' },
-  reed:       { label: 'Reed',       color: '#cc0000' },
-  greenhouse: { label: 'Greenhouse', color: '#24a148' },
-  lever:      { label: 'Lever',      color: '#0066cc' },
-  ashby:      { label: 'Ashby',      color: '#7c3aed' },
+  remoteok:          { label: 'RemoteOK',      color: '#28a745' },
+  remotive:          { label: 'Remotive',      color: '#ef4444' },
+  arbeitnow:         { label: 'Arbeitnow',     color: '#f59e0b' },
+  adzuna:            { label: 'Adzuna',        color: '#e55a1d' },
+  the_muse:          { label: 'The Muse',      color: '#e91e8c' },
+  jsearch:           { label: 'JSearch',       color: '#1a73e8' },
+  reed:              { label: 'Reed',          color: '#cc0000' },
+  serpapi:           { label: 'Google Jobs',   color: '#4285f4' },
+  openwebninja:      { label: 'Google Jobs+',  color: '#0f9d58' },
+  jobicy:            { label: 'Jobicy',        color: '#7c3aed' },
+  jobicy_tagged:     { label: 'Jobicy',        color: '#7c3aed' },
+  jobicy_africa:     { label: 'Jobicy Africa', color: '#db7c26' },
+  careerjet:         { label: 'CareerJet',     color: '#005b99' },
+  careerjet_nigeria: { label: 'CareerJet NG',  color: '#007a33' },
+  greenhouse:        { label: 'Greenhouse',    color: '#24a148' },
+  lever:             { label: 'Lever',         color: '#0066cc' },
+  ashby:             { label: 'Ashby',         color: '#7c3aed' },
 }
 
 function SourceChip({ sourceKey, active, done }: { sourceKey: string; active: boolean; done: boolean }) {
@@ -95,8 +102,10 @@ function LiveProgress({
             </p>
             <p style={{ fontSize: 12.5, color: 'var(--text3)', margin: 0 }}>
               {newJobs > 0
-                ? `${newJobs} new job${newJobs !== 1 ? 's' : ''} added · ${fetched} total fetched`
-                : `${fetched} jobs fetched — all already in your database`}
+                ? `✨ ${newJobs} fresh job${newJobs !== 1 ? 's' : ''} added to your board · ${fetched} total fetched`
+                : fetched > 0
+                  ? `${fetched} jobs checked — your board is up to date`
+                  : 'Search complete — check results below'}
             </p>
           </div>
         </div>
@@ -151,10 +160,10 @@ function LiveProgress({
           </span>
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
             {isPending
-              ? 'Starting search…'
+              ? 'Warming up search engines…'
               : currentSource
-                ? `Fetching from ${SOURCES[currentSource]?.label ?? currentSource}…`
-                : 'Searching the internet for jobs…'}
+                ? `Scanning ${SOURCES[currentSource]?.label ?? currentSource}…`
+                : 'Searching across job boards…'}
           </span>
         </div>
         {run?.new_jobs != null && run.new_jobs > 0 && (
@@ -200,10 +209,12 @@ function LiveProgress({
 
       <p style={{ fontSize: 11.5, color: 'var(--text4)', marginTop: 12, marginBottom: 0 }}>
         {isPending
-          ? 'Connecting to job sources…'
-          : `${sourcesDone} of ${sourcesTotal} source${sourcesTotal !== 1 ? 's' : ''} done`
+          ? 'Connecting to live job sources…'
+          : sourcesDone === sourcesTotal && sourcesTotal > 0
+            ? `All ${sourcesTotal} sources scanned`
+            : `${sourcesDone} of ${sourcesTotal} source${sourcesTotal !== 1 ? 's' : ''} done`
         }
-        {fetched > 0 && ` · ${fetched} fetched`}
+        {fetched > 0 && <span style={{ color: 'var(--accent)' }}> · {fetched} jobs found so far</span>}
       </p>
     </div>
   )
@@ -515,7 +526,7 @@ export default function DiscoverPage() {
             Discover Jobs
           </h1>
           <p style={{ fontSize: 13.5, color: 'var(--text3)', margin: 0 }}>
-            Searches RemoteOK, Remotive, Arbeitnow, Adzuna, The Muse and more — simultaneously.
+            Searches <strong style={{ color: 'var(--text2)' }}>{Object.keys(SOURCES).filter(k => !['greenhouse','lever','ashby'].includes(k)).length}+ job boards</strong> simultaneously — Google Jobs, Jobberman, Reed, Adzuna, RemoteOK and more.
           </p>
         </div>
 
@@ -655,14 +666,21 @@ export default function DiscoverPage() {
             {/* Results header + search bar */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                  {meta.total ?? 0} jobs found
-                  {resultRemote
-                    ? ' (remote, worldwide)'
-                    : lastCriteria?.locations?.length
-                      ? ` in ${lastCriteria.locations.join(', ')} + remote`
-                      : ''
-                  }
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+                  {(meta.total ?? 0) === 0 ? (
+                    <span style={{ color: 'var(--text3)' }}>No matching jobs</span>
+                  ) : (
+                    <>
+                      <span style={{ color: 'var(--accent)' }}>{meta.total}</span>
+                      {' '}job{(meta.total ?? 0) !== 1 ? 's' : ''} found
+                      {resultRemote
+                        ? <span style={{ color: 'var(--text4)', fontWeight: 400, fontSize: 12.5 }}> · remote & worldwide</span>
+                        : lastCriteria?.locations?.length
+                          ? <span style={{ color: 'var(--text4)', fontWeight: 400, fontSize: 12.5 }}> · {lastCriteria.locations.slice(0,2).join(', ')} + remote</span>
+                          : null
+                      }
+                    </>
+                  )}
                 </p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button
@@ -725,7 +743,17 @@ export default function DiscoverPage() {
             ) : (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {jobs.map((job: any) => <JobCard key={job.id} job={job} />)}
+                  {jobs.map((job: any, idx: number) => (
+                    <div
+                      key={job.id}
+                      style={{
+                        animation: `ts-fade-in 0.35s ease both`,
+                        animationDelay: `${Math.min(idx * 0.04, 0.4)}s`,
+                      }}
+                    >
+                      <JobCard job={job} />
+                    </div>
+                  ))}
                 </div>
                 {(meta.last_page ?? 1) > 1 && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 }}>
@@ -757,28 +785,43 @@ export default function DiscoverPage() {
         {/* Empty / pre-search state */}
         {!activeRunId && !runSearch.isPending && (
           <div style={{
-            padding: '56px 24px', textAlign: 'center',
+            padding: '52px 24px', textAlign: 'center',
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
+            animation: 'ts-fade-in 0.5s ease',
           }}>
-            <div style={{ color: 'var(--text4)', marginBottom: 16 }}>
-              <Zap size={38} strokeWidth={1.2} />
+            <div style={{ marginBottom: 16 }}>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 64, height: 64, borderRadius: '50%',
+                background: 'linear-gradient(135deg, var(--accent)22, var(--accent)08)',
+                border: '1px solid var(--accent)30',
+              }}>
+                <Zap size={28} strokeWidth={1.5} color="var(--accent)" />
+              </div>
             </div>
-            <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8, letterSpacing: '-0.02em' }}>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 8, letterSpacing: '-0.03em' }}>
               Ready to find your next role
             </p>
-            <p style={{ fontSize: 13.5, color: 'var(--text3)', maxWidth: 380, margin: '0 auto 20px', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 13.5, color: 'var(--text3)', maxWidth: 400, margin: '0 auto 6px', lineHeight: 1.6 }}>
               Your keywords and location are pre-filled from your profile.
-              Hit <strong style={{ color: 'var(--text2)' }}>Search Jobs</strong> to pull live results from across the internet.
             </p>
-            {/* Source chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', maxWidth: 500, margin: '0 auto' }}>
-              {Object.entries(SOURCES).slice(0, 7).map(([key, s]) => (
-                <span key={key} style={{
-                  fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
-                  background: s.color + '18', color: s.color,
-                  border: `1px solid ${s.color}30`,
-                  letterSpacing: '0.04em', textTransform: 'uppercase',
-                }}>
+            <p style={{ fontSize: 13, color: 'var(--text4)', maxWidth: 360, margin: '0 auto 24px', lineHeight: 1.6 }}>
+              Hit <strong style={{ color: 'var(--accent)' }}>Search Jobs</strong> to scan {Object.keys(SOURCES).filter(k => !['greenhouse','lever','ashby'].includes(k)).length}+ live job boards at once.
+            </p>
+            {/* Source chips in a flowing row */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', maxWidth: 520, margin: '0 auto' }}>
+              {Object.entries(SOURCES).filter(([k]) => !['greenhouse','lever','ashby','jobicy_africa','careerjet_nigeria'].includes(k)).map(([key, s], i) => (
+                <span
+                  key={key}
+                  style={{
+                    fontSize: 10.5, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                    background: s.color + '18', color: s.color,
+                    border: `1px solid ${s.color}30`,
+                    letterSpacing: '0.04em', textTransform: 'uppercase',
+                    animation: `ts-fade-in 0.4s ease both`,
+                    animationDelay: `${0.1 + i * 0.05}s`,
+                  }}
+                >
                   {s.label}
                 </span>
               ))}
@@ -797,6 +840,10 @@ export default function DiscoverPage() {
         @keyframes ts-fade-in {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0);   }
+        }
+        @keyframes ts-slide-up {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </>
