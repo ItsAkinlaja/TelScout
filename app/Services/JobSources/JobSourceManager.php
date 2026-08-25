@@ -43,14 +43,47 @@ class JobSourceManager
             ->unique(fn($j) => $j['source_url'] ?? ($j['title'] . '|' . $j['company']))
             ->values();
 
-        // Apply location filter if specific locations were requested
+        // ── Keyword relevance filter ───────────────────────────────────────────
+        // Post-fetch: ensure the job title or description actually relates to the
+        // searched keywords. This catches cases where broad-category APIs (e.g.
+        // The Muse "Engineering" category) return unrelated roles like
+        // "Product Manager" when the user searched "software engineer".
+        $keywords = $criteria['keywords'] ?? [];
+        if (!empty($keywords)) {
+            $filtered = $filtered->filter(function ($job) use ($keywords) {
+                $title = strtolower($job['title'] ?? '');
+                $desc  = strtolower(substr($job['description'] ?? '', 0, 500));
+
+                foreach ($keywords as $kw) {
+                    $kw = strtolower(trim($kw));
+                    if (empty($kw)) continue;
+
+                    // Split multi-word keywords ("full stack developer" → ["full", "stack", "developer"])
+                    $parts = preg_split('/[\s\-_]+/', $kw);
+
+                    // Check direct keyword match in title
+                    if (str_contains($title, $kw)) return true;
+
+                    // Check each significant word in title
+                    foreach ($parts as $part) {
+                        if (strlen($part) > 3 && str_contains($title, $part)) return true;
+                    }
+
+                    // Looser description match (keyword appears prominently)
+                    if (str_contains($desc, $kw)) return true;
+                }
+
+                return false;
+            });
+        }
+
+        // ── Location filter ────────────────────────────────────────────────────
         $locations  = $criteria['locations']   ?? [];
         $remoteOnly = $criteria['remote_only'] ?? false;
 
         if ($remoteOnly) {
             $filtered = $filtered->filter(fn($j) => $this->isRemote($j));
         } elseif (!empty($locations) && !$this->hasWorldwideLocation($locations)) {
-            // Include jobs matching location OR remote jobs (unless restricted to other country)
             $filtered = $filtered->filter(fn($j) =>
                 $this->matchesLocation($j['location'] ?? '', $locations) ||
                 ($this->isRemote($j) && !$this->isRestrictedToOtherCountry($j['location'] ?? '', $locations))
@@ -87,15 +120,11 @@ class JobSourceManager
     /**
      * Check if the job location matches any of the requested locations.
      * Handles compound strings like "Lagos Nigeria", "Lagos, Nigeria".
+     * Does NOT handle remote — that's handled separately by the caller.
      */
     private function matchesLocation(string $jobLocation, array $requestedLocations): bool
     {
         $jl = strtolower(trim($jobLocation));
-
-        // Always include remote jobs — they're open to all locations
-        if ($this->isRemote(['location' => $jobLocation, 'is_remote' => false])) {
-            return true;
-        }
 
         $aliases = [
             'uk'  => ['united kingdom', 'great britain', 'england', 'scotland', 'wales'],
@@ -107,22 +136,20 @@ class JobSourceManager
             $loc = strtolower(trim($loc));
             if ($loc === '') continue;
 
-            // Skip wildcards — handled upstream
+            // Wildcards mean "anywhere" — match everything
             if (in_array($loc, ['worldwide', 'remote', 'anywhere', 'global', 'all'])) return true;
 
-            // Split compound location into individual terms: "Lagos Nigeria" → ["lagos", "nigeria"]
-            $terms = preg_split('/[\s,]+/', $loc);
-            $terms = array_filter($terms, fn($t) => strlen($t) > 2);
+            // Direct whole-string partial match
+            if (str_contains($jl, $loc) || str_contains($loc, $jl)) return true;
 
-            // Any single term match is sufficient (e.g. "Nigeria" matches "Lagos, Nigeria")
+            // Split compound location "Lagos Nigeria" → ["lagos", "nigeria"]
+            // Any single meaningful term match is sufficient
+            $terms = array_filter(preg_split('/[\s,]+/', $loc) ?? [], fn($t) => strlen($t) > 2);
             foreach ($terms as $term) {
                 if (str_contains($jl, $term)) return true;
             }
 
-            // Direct whole-string match or reverse contains
-            if (str_contains($jl, $loc) || str_contains($loc, $jl)) return true;
-
-            // Alias match
+            // Alias match (UK → United Kingdom, etc.)
             foreach ($aliases as $alias => $names) {
                 if ($loc === $alias || in_array($loc, $names)) {
                     if (str_contains($jl, $alias) || collect($names)->contains(fn($n) => str_contains($jl, $n))) {

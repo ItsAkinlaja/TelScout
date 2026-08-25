@@ -433,16 +433,19 @@ export default function DiscoverPage() {
       // Keyword filter within results
       if (resultSearch.trim()) {
         params.search = resultSearch.trim()
+      } else if (lastCriteria?.keywords?.length) {
+        // Scope results to the searched keywords — prevents showing unrelated DB jobs
+        params.search = lastCriteria.keywords.slice(0, 3).join(' OR ')
       }
 
       // Remote filter
-      if (resultRemote || lastCriteria?.remote_only) {
+      if (resultRemote) {
         params.remote = true
-      }
-
-      // Location filter — scope to what was actually searched
-      if (lastCriteria?.locations?.length && !lastCriteria.remote_only) {
+        // When remote only: don't restrict by location — remote jobs are global
+      } else if (lastCriteria?.locations?.length) {
+        // Location filter — show jobs in that location OR remote jobs (global)
         params.location_filter = lastCriteria.locations.join(',')
+        params.include_remote = true  // backend will also include is_remote=true
       }
 
       // Date filter — only show jobs from this search window
@@ -654,9 +657,12 @@ export default function DiscoverPage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
                   {meta.total ?? 0} jobs found
-                  {lastCriteria?.locations?.length
-                    ? ` in ${lastCriteria.locations.join(', ')}`
-                    : lastCriteria?.remote_only ? ' (remote)' : ''}
+                  {resultRemote
+                    ? ' (remote, worldwide)'
+                    : lastCriteria?.locations?.length
+                      ? ` in ${lastCriteria.locations.join(', ')} + remote`
+                      : ''
+                  }
                 </p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button

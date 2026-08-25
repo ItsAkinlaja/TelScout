@@ -21,10 +21,20 @@ class JobController extends Controller
 
         if ($request->filled('search')) {
             $q = $request->input('search');
-            $query->where(function ($q2) use ($q) {
-                $q2->where('title', 'like', "%{$q}%")
-                   ->orWhere('description', 'like', "%{$q}%");
-            });
+            // Support "term1 OR term2 OR term3" for multi-keyword results filtering
+            if (str_contains($q, ' OR ')) {
+                $terms = array_filter(array_map('trim', explode(' OR ', $q)));
+                $query->where(function ($q2) use ($terms) {
+                    foreach ($terms as $term) {
+                        $q2->orWhere('title', 'like', "%{$term}%");
+                    }
+                });
+            } else {
+                $query->where(function ($q2) use ($q) {
+                    $q2->where('title', 'like', "%{$q}%")
+                       ->orWhere('description', 'like', "%{$q}%");
+                });
+            }
         }
 
         if ($request->filled('company_id')) {
@@ -71,12 +81,16 @@ class JobController extends Controller
         if ($request->filled('location_filter')) {
             $locationTerms = array_filter(array_map('trim', explode(',', $request->input('location_filter'))));
             if (!empty($locationTerms)) {
-                $query->where(function ($q) use ($locationTerms) {
+                $includeRemote = $request->boolean('include_remote', false);
+                $query->where(function ($q) use ($locationTerms, $includeRemote) {
                     foreach ($locationTerms as $term) {
                         $q->orWhere('location', 'like', "%{$term}%");
                     }
-                    // Always include remote jobs alongside location results
-                    $q->orWhere('is_remote', true);
+                    // Optionally also include remote/global jobs alongside the location
+                    if ($includeRemote) {
+                        $q->orWhere('is_remote', true)
+                          ->orWhere('location', '')->orWhereNull('location');
+                    }
                 });
             }
         }
