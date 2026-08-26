@@ -40,58 +40,23 @@ class JobSourceManager
             }
         }
 
-        $filtered = $all
+        return $this->filterResults($all, $criteria);
+    }
+
+    /**
+     * Apply all relevance and location filters to a collection of raw jobs.
+     */
+    public function filterResults(Collection $jobs, array $criteria): Collection
+    {
+        $filtered = $jobs
             ->filter(fn($j) => !empty($j['title']) && !empty($j['company']))
             ->unique(fn($j) => $j['source_url'] ?? ($j['title'] . '|' . $j['company']))
             ->values();
 
         // ── Keyword relevance filter ───────────────────────────────────────────
-        // Post-fetch: ensure the job actually matches what the user searched.
-        // Uses a scoring approach: title match = strong, description match = weak.
-        // A job passes if it scores at least 1 point.
         $keywords = $criteria['keywords'] ?? [];
         if (!empty($keywords)) {
-            $filtered = $filtered->filter(function ($job) use ($keywords) {
-                $title = strtolower($job['title'] ?? '');
-                $desc  = strtolower(substr($job['description'] ?? '', 0, 800));
-
-                foreach ($keywords as $kw) {
-                    $kw = strtolower(trim($kw));
-                    if (empty($kw)) continue;
-
-                    // Exact phrase match in title (strongest signal)
-                    if (str_contains($title, $kw)) return true;
-
-                    // Exact phrase in description
-                    if (str_contains($desc, $kw)) return true;
-
-                    // Multi-word keyword: ALL significant words must appear in title
-                    // e.g. "full stack developer" — "full","stack","developer" all in title
-                    $parts = array_filter(
-                        preg_split('/[\s\-_\/]+/', $kw) ?: [],
-                        fn($p) => strlen($p) >= 4
-                    );
-                    if (count($parts) >= 2) {
-                        $allInTitle = true;
-                        foreach ($parts as $part) {
-                            if (!str_contains($title, $part)) {
-                                $allInTitle = false;
-                                break;
-                            }
-                        }
-                        if ($allInTitle) return true;
-                    }
-
-                    // Single-word keyword with 6+ chars: match title only (not description)
-                    // e.g. "python", "laravel", "devops" — avoids false positives
-                    if (count($parts) === 1) {
-                        $word = reset($parts);
-                        if (strlen($word) >= 6 && str_contains($title, $word)) return true;
-                    }
-                }
-
-                return false;
-            });
+            $filtered = $filtered->filter(fn($job) => $this->isKeywordRelevant($job, $keywords));
         }
 
         // ── Location filter ────────────────────────────────────────────────────
@@ -108,6 +73,52 @@ class JobSourceManager
         }
 
         return $filtered->values();
+    }
+
+    /**
+     * Internal logic for checking if a single job matches the keyword criteria.
+     */
+    private function isKeywordRelevant(array $job, array $keywords): bool
+    {
+        $title = strtolower($job['title'] ?? '');
+        $desc  = strtolower(substr($job['description'] ?? '', 0, 800));
+
+        foreach ($keywords as $kw) {
+            $kw = strtolower(trim($kw));
+            if (empty($kw)) continue;
+
+            // Exact phrase match in title (strongest signal)
+            if (str_contains($title, $kw)) return true;
+
+            // Exact phrase in description
+            if (str_contains($desc, $kw)) return true;
+
+            // Multi-word keyword: ALL significant words must appear in title
+            // e.g. "full stack developer" — "full","stack","developer" all in title
+            $parts = array_filter(
+                preg_split('/[\s\-_\/]+/', $kw) ?: [],
+                fn($p) => strlen($p) >= 4
+            );
+            if (count($parts) >= 2) {
+                $allInTitle = true;
+                foreach ($parts as $part) {
+                    if (!str_contains($title, $part)) {
+                        $allInTitle = false;
+                        break;
+                    }
+                }
+                if ($allInTitle) return true;
+            }
+
+            // Single-word keyword with 6+ chars: match title only (not description)
+            // e.g. "python", "laravel", "devops" — avoids false positives
+            if (count($parts) === 1) {
+                $word = reset($parts);
+                if (strlen($word) >= 6 && str_contains($title, $word)) return true;
+            }
+        }
+
+        return false;
     }
 
     public function getSourceNames(): array
@@ -195,9 +206,16 @@ class JobSourceManager
 
         // If it contains a bracketed country or specific region name that isn't ours
         // Examples: "Remote (UK)", "Remote - US Only", "Remote (Europe)"
-        $regions = ['uk', 'usa', 'us', 'europe', 'canada', 'germany', 'india'];
+        $regions = [
+            'uk', 'usa', 'us', 'europe', 'canada', 'germany', 'india',
+            'london', 'new york', 'berlin', 'san francisco', 'paris', 'tokyo'
+        ];
         foreach ($regions as $region) {
-            if (str_contains($jl, $region)) return true;
+            // Check for specific word boundary or bracketed mention to avoid partial word matches
+            // e.g. "Remote (UK)" or "Remote - UK"
+            if (preg_match('/\b' . preg_quote($region, '/') . '\b/i', $jl)) {
+                return true;
+            }
         }
 
         return false;

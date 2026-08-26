@@ -69,8 +69,12 @@ class DiscoverJobsJob implements ShouldQueue
                 ]);
 
                 try {
-                    $sourceJobs = $source->search($criteria);
-                    $totalFetched += $sourceJobs->count();
+                    $sourceJobsRaw = $source->search($criteria);
+
+                    // Apply central filtering (relevance + location) before ingestion
+                    $sourceJobs = $manager->filterResults($sourceJobsRaw, $criteria);
+
+                    $totalFetched += $sourceJobsRaw->count();
 
                     foreach ($sourceJobs as $jobData) {
                         $job = $ingestion->ingest($jobData);
