@@ -14,19 +14,21 @@ import { formatCurrency, formatDate } from '../lib/utils'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SearchForm {
-  keywords:    string
-  locations:   string
-  remote_only: boolean
-  days_old:    number
-  min_score:   number
+  keywords:        string
+  locations:       string
+  remote_only:     boolean
+  employment_type: string   // '' | 'fulltime' | 'parttime' | 'contract' | 'internship'
+  days_old:        number
+  min_score:       number
 }
 
 const DEFAULT_FORM: SearchForm = {
-  keywords:    '',
-  locations:   '',
-  remote_only: false,
-  days_old:    30,
-  min_score:   0,
+  keywords:        '',
+  locations:       '',
+  remote_only:     false,
+  employment_type: '',
+  days_old:        30,
+  min_score:       0,
 }
 
 // ── Source registry ───────────────────────────────────────────────────────────
@@ -400,7 +402,7 @@ export default function DiscoverPage() {
   const [resultRemote, setResultRemote]   = useState(false)
   // Store the last submitted criteria so results query can use it
   const [lastCriteria, setLastCriteria]   = useState<{
-    keywords: string[]; locations: string[]; remote_only: boolean; days_old: number; min_score: number
+    keywords: string[]; locations: string[]; remote_only: boolean; employment_type?: string; days_old: number; min_score: number
   } | null>(null)
 
   // Profile pre-fill
@@ -416,7 +418,7 @@ export default function DiscoverPage() {
     // Note: we intentionally do NOT pre-fill remote_only from the profile.
     // remote_only=true would filter out all on-site/hybrid Nigerian jobs.
     // The user can toggle it manually if they want remote-only results.
-    setForm(f => ({ ...f, keywords, locations }))
+    setForm(f => ({ ...f, keywords, locations, employment_type: '' }))
   }, [profile])
 
   // Poll run status — 1 s while running/pending for live source progress, 3 s otherwise
@@ -436,7 +438,7 @@ export default function DiscoverPage() {
 
   // Load results once completed — scoped to the search criteria (location, keywords, remote)
   const { data: resultsData, isLoading: resultsLoading } = useQuery({
-    queryKey: ['discover-results', activeRunId, resultsPage, resultSearch, resultRemote],
+    queryKey: ['discover-results', activeRunId, resultsPage, resultSearch, resultRemote, lastCriteria?.employment_type],
     queryFn:  () => {
       const params: Record<string, any> = {
         page:     resultsPage,
@@ -444,20 +446,25 @@ export default function DiscoverPage() {
         status:   'active',
       }
 
-      // Scope results to exactly this search run — shows only what was fetched now,
-      // not jobs from previous searches. Most precise scoping possible.
+      // Scope to this search run using the last_seen_at window approach.
+      // Jobs ingested during this run will have last_seen_at updated to run time.
       if (activeRunId) {
         params.search_run_id = activeRunId
       }
 
-      // Manual search box — user-typed filter on title/company
+      // Manual filter box — typed by user after results load
       if (resultSearch.trim()) {
         params.search = resultSearch.trim()
       }
 
-      // Remote filter — only when user explicitly toggles it in the results panel
+      // Remote filter — only when user explicitly toggles it
       if (resultRemote) {
         params.remote = true
+      }
+
+      // Employment type filter
+      if (lastCriteria?.employment_type) {
+        params.employment_type = lastCriteria.employment_type
       }
 
       return api.get('/jobs', { params }).then(r => r.data)
@@ -495,14 +502,24 @@ export default function DiscoverPage() {
 
   function handleSearch() {
     if (!form.keywords.trim()) return
-    const criteria = {
+    const criteria: Record<string, any> = {
       keywords:    form.keywords.split(',').map(s => s.trim()).filter(Boolean),
       locations:   form.locations.split(',').map(s => s.trim()).filter(Boolean),
       remote_only: form.remote_only,
       days_old:    form.days_old,
       min_score:   form.min_score,
     }
-    setLastCriteria(criteria)
+    if (form.employment_type) {
+      criteria.employment_type = form.employment_type
+    }
+    setLastCriteria({
+      keywords:        criteria.keywords,
+      locations:       criteria.locations,
+      remote_only:     criteria.remote_only,
+      days_old:        criteria.days_old,
+      min_score:       criteria.min_score,
+      ...(form.employment_type ? { employment_type: form.employment_type } : {}),
+    })
     setResultSearch('')
     setResultRemote(form.remote_only)
     runSearch.mutate(criteria)
@@ -565,11 +582,37 @@ export default function DiscoverPage() {
             </div>
           </div>
 
-          {/* Remote toggle */}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, color: 'var(--text2)', cursor: 'pointer', marginBottom: 12, userSelect: 'none' }}>
-            <input type="checkbox" checked={form.remote_only} onChange={e => set('remote_only', e.target.checked)} />
-            Remote only
-          </label>
+          {/* Job type toggle buttons */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 4 }}>Type:</span>
+            {[
+              { value: '',          label: 'All types' },
+              { value: 'FULLTIME',  label: '🏢 Full-time' },
+              { value: 'PARTTIME',  label: '⏰ Part-time' },
+              { value: 'CONTRACTOR',label: '📋 Contract' },
+              { value: 'INTERN',    label: '🎓 Internship' },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => set('employment_type', opt.value)}
+                style={{
+                  fontSize: 12.5, padding: '5px 12px', borderRadius: 20,
+                  border: `1px solid ${form.employment_type === opt.value ? 'var(--accent)' : 'var(--border2)'}`,
+                  background: form.employment_type === opt.value ? 'var(--accent)' : 'var(--surface2)',
+                  color: form.employment_type === opt.value ? '#fff' : 'var(--text2)',
+                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--text2)', cursor: 'pointer', userSelect: 'none' }}>
+              <input type="checkbox" checked={form.remote_only} onChange={e => set('remote_only', e.target.checked)} />
+              Remote only
+            </label>
+          </div>
 
           {/* Advanced toggle */}
           <div>
@@ -631,7 +674,7 @@ export default function DiscoverPage() {
                   // Note: we intentionally do NOT pre-fill remote_only from the profile.
     // remote_only=true would filter out all on-site/hybrid Nigerian jobs.
     // The user can toggle it manually if they want remote-only results.
-    setForm(f => ({ ...f, keywords, locations }))
+    setForm(f => ({ ...f, keywords, locations, employment_type: '' }))
                 }}
                 style={{ fontSize: 12.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}
               >
